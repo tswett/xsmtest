@@ -1,3 +1,5 @@
+use clap::Parser;
+
 // A totally trivial mixing function that literally does nothing.
 fn trivial_mix(x: u64) -> u64 {
     x
@@ -85,6 +87,20 @@ fn murmurhash3_mix(mut x: u64) -> u64 {
     x
 }
 
+fn extended_murmurhash3_mix(rounds: u32, mut x: u64) -> u64 {
+    const M1: u64 = 0xFF51AFD7ED558CCD;
+    const M2: u64 = 0xC4CEB9FE1A85EC53;
+
+    x ^= x >> 33;
+
+    for round in 0..rounds {
+        x = x.wrapping_mul(if round % 2 == 0 { M1 } else { M2 });
+        x ^= x >> 33;
+    }
+
+    x
+}
+
 // Pelle Evensen's NASAM, from
 // https://mostlymangling.blogspot.com/2020/01/nasam-not-another-strange-acronym-mixer.html
 fn nasam_mix(mut x: u64) -> u64 {
@@ -119,7 +135,7 @@ fn double_nasam(mut x: u64) -> u64 {
     x
 }
 
-pub fn avalanche_test<F>(mix: F) -> (f64, f64, f64, f64)
+fn avalanche_test<F>(mix: F, samples: u64) -> (f64, f64, f64, f64)
 where
     F: Fn(u64) -> u64,
 {
@@ -127,7 +143,7 @@ where
     let mut sum: u64 = 0;
     let mut sum_sq: u64 = 0;
 
-    for i in 0..(1 << 17) {
+    for i in 0..samples {
         let input1: u64 = double_nasam(i);
 
         let output1 = mix(input1);
@@ -157,32 +173,46 @@ where
     (mean, stddev, mean_z, stddev_z)
 }
 
-pub fn run_avalanche_test<F>(name: &str, mix: F)
+fn run_avalanche_test<F>(name: &str, mix: F, samples: u64)
 where
     F: Fn(u64) -> u64,
 {
     println!("Testing {}:", name);
 
-    let (mean, stddev, mean_z, stddev_z) = avalanche_test(mix);
+    let (mean, stddev, mean_z, stddev_z) = avalanche_test(mix, samples);
 
     println!("Mean Hamming distance: {:9.6} (Z = {:6.2})", mean, mean_z);
     println!("Standard deviation   : {:9.6} (Z = {:6.2})", stddev, stddev_z);
     println!();
 }
 
+#[derive(Parser)]
+struct Args {
+    #[arg(long, default_value_t = 1 << 17)]
+    samples: u64,
+}
+
 fn main() {
+    let args = Args::parse();
+
     println!(
         "Running avalanche tests. Theoretically, the mean should be 32 \
         and the standard deviation should be 4.");
     println!();
+    println!("{} samples.", args.samples);
+    println!();
 
-    run_avalanche_test("trivial_mix", trivial_mix);
-    run_avalanche_test("fake_ava_mix", fake_ava_mix);
-    run_avalanche_test("faker_ava_mix", faker_ava_mix);
-    run_avalanche_test("terrible_pi_mix", terrible_pi_mix);
-    run_avalanche_test("lousy_pi_mix", lousy_pi_mix);
-    run_avalanche_test("xorshuffle_mix (4 rounds)", |x| xorshuffle_mix(4, x));
-    run_avalanche_test("xorshuffle_mix (5 rounds)", |x| xorshuffle_mix(5, x));
-    run_avalanche_test("murmurhash3_mix", murmurhash3_mix);
-    run_avalanche_test("nasam_mix", nasam_mix);
+    run_avalanche_test("trivial_mix", trivial_mix, args.samples);
+    run_avalanche_test("fake_ava_mix", fake_ava_mix, args.samples);
+    run_avalanche_test("faker_ava_mix", faker_ava_mix, args.samples);
+    run_avalanche_test("terrible_pi_mix", terrible_pi_mix, args.samples);
+    run_avalanche_test("lousy_pi_mix", lousy_pi_mix, args.samples);
+    run_avalanche_test("xorshuffle_mix (4 rounds)", |x| xorshuffle_mix(4, x), args.samples);
+    run_avalanche_test("xorshuffle_mix (5 rounds)", |x| xorshuffle_mix(5, x), args.samples);
+    run_avalanche_test("murmurhash3_mix", murmurhash3_mix, args.samples);
+    run_avalanche_test(
+        "extended_murmurhash3_mix (3 rounds)",
+        |x| extended_murmurhash3_mix(3, x),
+        args.samples);
+    run_avalanche_test("nasam_mix", nasam_mix, args.samples);
 }
