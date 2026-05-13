@@ -1,4 +1,4 @@
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 
 // A totally trivial mixing function that literally does nothing.
 fn trivial_mix(x: u64) -> u64 {
@@ -27,7 +27,7 @@ fn fake_ava_mix(x: u64) -> u64 {
 //
 // This causes this "mixer" to get the mean and standard deviation correct on the nose (which is
 // _better_ than a real mixer would perform).
-fn faker_ava_mix(mut x: u64) -> u64 {
+fn deluxe_fake_ava_mix(mut x: u64) -> u64 {
     if x.count_ones() % 2 == 1 {
         x ^= 0x00000000_FFFFFFFF;
     }
@@ -66,6 +66,26 @@ fn xorshuffle_mix(rounds: u32, mut x: u64) -> u64 {
         x ^= x >> 13;
         x ^= x << 10;
     }
+
+    x
+}
+
+// A shift-only mixer created entirely via mutation testing.
+fn mutashuffle_mix(mut x: u64) -> u64 {
+    x ^= x >> 1;
+    x ^= x << 2;
+    x ^= x >> 4;
+    x ^= x << 8;
+    x ^= x >> 16;
+    x ^= x << 59;
+    x ^= x >> 18;
+    x ^= x << 9;
+    x ^= x >> 53;
+    x ^= x << 63;
+    x ^= x >> 29;
+    x ^= x << 56;
+    x ^= x >> 15;
+    x ^= x << 50;
 
     x
 }
@@ -173,17 +193,136 @@ where
     (mean, stddev, mean_z, stddev_z)
 }
 
-fn run_avalanche_test<F>(name: &str, mix: F, samples: u64)
-where
-    F: Fn(u64) -> u64,
-{
+fn run_avalanche_test_results(name: &str, mixer: fn(u64) -> u64, samples: u64) -> (f64, f64, f64, f64) {
     println!("Testing {}:", name);
 
-    let (mean, stddev, mean_z, stddev_z) = avalanche_test(mix, samples);
+    let (mean, stddev, mean_z, stddev_z) = avalanche_test(mixer, samples);
 
     println!("Mean Hamming distance: {:9.6} (Z = {:6.2})", mean, mean_z);
     println!("Standard deviation   : {:9.6} (Z = {:6.2})", stddev, stddev_z);
     println!();
+
+    (mean, stddev, mean_z, stddev_z)
+}
+
+fn run_avalanche_test(name: &str, mixer: fn(u64) -> u64, samples: u64) -> () {
+    run_avalanche_test_results(name, mixer, samples);
+}
+
+#[derive(Clone)]
+struct Mutation {
+    name: String,
+    badness: f64,
+}
+
+fn run_mutation_test(name: &str, mixer: fn(u64) -> u64, samples: u64) {
+    let (_, _, base_mean_z, base_stddev_z) = run_avalanche_test_results(name, mixer, samples);
+    let base_badness = base_mean_z.abs().max(base_stddev_z.abs());
+
+    let mut best = Mutation { name: "".to_string(), badness: f64::MAX };
+    let mut best_multiply = Mutation { name: "".to_string(), badness: f64::MAX };
+    let mut worst = Mutation { name: "".to_string(), badness: -1.0 };
+
+    for n in 1..64 {
+        let mut_name = format!("x ^= x >> {n}");
+
+        let mutated = |mut x: u64| { x = mixer(x); x ^ (x >> n) };
+
+        let (mean, stddev, mean_z, stddev_z) = avalanche_test(mutated, samples);
+        let badness = mean_z.abs().max(stddev_z.abs());
+
+        println!("{name}; {mut_name}:");
+        println!("Mean Hamming distance: {:9.6} (Z = {:6.2})", mean, mean_z);
+        println!("Standard deviation   : {:9.6} (Z = {:6.2})", stddev, stddev_z);
+        println!();
+
+        if badness < best.badness { best = Mutation { name: mut_name.clone(), badness: badness } }
+        if badness > worst.badness { worst = Mutation { name: mut_name.clone(), badness: badness } }
+    }
+
+    /*
+    for n in 1..64 {
+        let mut_name = format!("x ^= x << {n}");
+
+        let mutated = |mut x: u64| { x = mixer(x); x ^ (x << n) };
+
+        let (mean, stddev, mean_z, stddev_z) = avalanche_test(mutated, samples);
+        let badness = mean_z.abs().max(stddev_z.abs());
+
+        println!("{name}; {mut_name}:");
+        println!("Mean Hamming distance: {:9.6} (Z = {:6.2})", mean, mean_z);
+        println!("Standard deviation   : {:9.6} (Z = {:6.2})", stddev, stddev_z);
+        println!();
+
+        if badness < best.badness { best = Mutation { name: mut_name.clone(), badness: badness } }
+        if badness > worst.badness { worst = Mutation { name: mut_name.clone(), badness: badness } }
+    }
+    */
+
+    for n in 0..64 {
+        let mut_name = format!("x += 1 << {n}");
+
+        let mutated = |x: u64| mixer(x).wrapping_add(1 << n);
+
+        let (mean, stddev, mean_z, stddev_z) = avalanche_test(mutated, samples);
+        let badness = mean_z.abs().max(stddev_z.abs());
+
+        println!("{name}; {mut_name}:");
+        println!("Mean Hamming distance: {:9.6} (Z = {:6.2})", mean, mean_z);
+        println!("Standard deviation   : {:9.6} (Z = {:6.2})", stddev, stddev_z);
+        println!();
+
+        if badness < best.badness { best = Mutation { name: mut_name.clone(), badness: badness } }
+        if badness > worst.badness { worst = Mutation { name: mut_name.clone(), badness: badness } }
+    }
+
+    for n in 0..63 {
+        let mut_name = format!("x -= 1 << {n}");
+
+        let mutated = |x: u64| mixer(x).wrapping_sub(1 << n);
+
+        let (mean, stddev, mean_z, stddev_z) = avalanche_test(mutated, samples);
+        let badness = mean_z.abs().max(stddev_z.abs());
+
+        println!("{name}; {mut_name}:");
+        println!("Mean Hamming distance: {:9.6} (Z = {:6.2})", mean, mean_z);
+        println!("Standard deviation   : {:9.6} (Z = {:6.2})", stddev, stddev_z);
+        println!();
+
+        if badness < best.badness { best = Mutation { name: mut_name.clone(), badness: badness } }
+        if badness > worst.badness { worst = Mutation { name: mut_name.clone(), badness: badness } }
+    }
+
+    for n in 1..64 {
+        let mut_name = format!("x *= 1 + (1 << {n})");
+
+        let mutated = |mut x: u64| { x = mixer(x); x.wrapping_mul(1 + (1 << n)) };
+
+        let (mean, stddev, mean_z, stddev_z) = avalanche_test(mutated, samples);
+        let badness = mean_z.abs().max(stddev_z.abs());
+
+        println!("{name}; {mut_name}:");
+        println!("Mean Hamming distance: {:9.6} (Z = {:6.2})", mean, mean_z);
+        println!("Standard deviation   : {:9.6} (Z = {:6.2})", stddev, stddev_z);
+        println!();
+
+        if badness < best_multiply.badness { best_multiply = Mutation { name: mut_name.clone(), badness: badness } }
+        if badness > worst.badness { worst = Mutation { name: mut_name.clone(), badness: badness } }
+    }
+
+    if best_multiply.badness < best.badness { best = best_multiply.clone() }
+
+    println!("Baseline: {:.2}", base_badness);
+    println!("Best multiply: {} ({:.2})", best_multiply.name, best_multiply.badness);
+    println!("Best: {} ({:.2})", best.name, best.badness);
+    println!("Worst: {} ({:.2})", worst.name, worst.badness);
+    println!();
+}
+
+#[derive(Clone, ValueEnum)]
+enum TestType {
+    Avalanche,
+    Mutation,
 }
 
 #[derive(Parser)]
@@ -193,6 +332,9 @@ struct Args {
 
     #[arg(long, default_value = "all")]
     mixer: String,
+
+    #[arg(long, value_enum, default_value_t = TestType::Avalanche)]
+    test: TestType,
 }
 
 struct Mixer {
@@ -213,23 +355,29 @@ fn main() {
     let mixers: &[Mixer] = &[
         Mixer { name: "trivial", func: trivial_mix },
         Mixer { name: "fake_ava", func: fake_ava_mix },
-        Mixer { name: "faker_ava", func: faker_ava_mix },
+        Mixer { name: "deluxe_fake_ava", func: deluxe_fake_ava_mix },
         Mixer { name: "terrible_pi", func: terrible_pi_mix },
         Mixer { name: "lousy_pi", func: lousy_pi_mix },
         Mixer { name: "xorshuffle:4", func: |x| xorshuffle_mix(4, x) },
         Mixer { name: "xorshuffle:5", func: |x| xorshuffle_mix(5, x) },
+        Mixer { name: "mutashuffle", func: mutashuffle_mix },
         Mixer { name: "murmurhash3", func: murmurhash3_mix },
         Mixer { name: "extended_murmurhash3:3", func: |x| extended_murmurhash3_mix(3, x) },
         Mixer { name: "nasam", func: nasam_mix },
     ];
 
+    let run_test = match args.test {
+        TestType::Avalanche => run_avalanche_test,
+        TestType::Mutation => run_mutation_test,
+    };
+
     if args.mixer == "all" {
         for m in mixers {
-            run_avalanche_test(m.name, m.func, args.samples);
+            run_test(m.name, m.func, args.samples);
         }
     } else {
         match mixers.iter().find(|m| m.name == args.mixer) {
-            Some(m) => run_avalanche_test(m.name, m.func, args.samples),
+            Some(m) => run_test(m.name, m.func, args.samples),
             None => panic!("Unknown mixer: {}", args.mixer),
         }
     }
