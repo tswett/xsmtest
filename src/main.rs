@@ -1,4 +1,7 @@
+mod prng;
+
 use clap::{Parser, ValueEnum};
+use prng::PRNG;
 
 // A totally trivial mixing function that literally does nothing.
 fn trivial_mix(x: u64) -> u64 {
@@ -138,24 +141,7 @@ fn nasam_mix(mut x: u64) -> u64 {
     x
 }
 
-fn double_nasam(mut x: u64) -> u64 {
-    const M1: u64 = 0x9E6C63D0676A9A99;
-    const M2: u64 = 0x9E6D62D06F6A9A9B;
-
-    x ^= x.rotate_right(25) ^ x.rotate_right(47);
-
-    for _ in 0..2 {
-        x = x.wrapping_mul(M1);
-        x ^= (x >> 23) ^ (x >> 51);
-
-        x = x.wrapping_mul(M2);
-        x ^= (x >> 23) ^ (x >> 51);
-    }
-
-    x
-}
-
-fn avalanche_test<F>(mix: F, samples: u64) -> (f64, f64, f64, f64)
+fn avalanche_test<F>(mut prng: PRNG, mix: F, samples: u64) -> (f64, f64, f64, f64)
 where
     F: Fn(u64) -> u64,
 {
@@ -163,8 +149,8 @@ where
     let mut sum: u64 = 0;
     let mut sum_sq: u64 = 0;
 
-    for i in 0..samples {
-        let input1: u64 = double_nasam(i);
+    for _ in 0..samples {
+        let input1: u64 = prng.get_number();
 
         let output1 = mix(input1);
 
@@ -193,10 +179,12 @@ where
     (mean, stddev, mean_z, stddev_z)
 }
 
-fn run_avalanche_test_results(name: &str, mixer: fn(u64) -> u64, samples: u64) -> (f64, f64, f64, f64) {
+fn run_avalanche_test_results(prng: PRNG, name: &str, mixer: fn(u64) -> u64, samples: u64)
+    -> (f64, f64, f64, f64)
+{
     println!("Testing {}:", name);
 
-    let (mean, stddev, mean_z, stddev_z) = avalanche_test(mixer, samples);
+    let (mean, stddev, mean_z, stddev_z) = avalanche_test(prng, mixer, samples);
 
     println!("Mean Hamming distance: {:9.6} (Z = {:6.2})", mean, mean_z);
     println!("Standard deviation   : {:9.6} (Z = {:6.2})", stddev, stddev_z);
@@ -205,8 +193,8 @@ fn run_avalanche_test_results(name: &str, mixer: fn(u64) -> u64, samples: u64) -
     (mean, stddev, mean_z, stddev_z)
 }
 
-fn run_avalanche_test(name: &str, mixer: fn(u64) -> u64, samples: u64) -> () {
-    run_avalanche_test_results(name, mixer, samples);
+fn run_avalanche_test(prng: PRNG, name: &str, mixer: fn(u64) -> u64, samples: u64) -> () {
+    run_avalanche_test_results(prng, name, mixer, samples);
 }
 
 #[derive(Clone)]
@@ -215,8 +203,9 @@ struct Mutation {
     badness: f64,
 }
 
-fn run_mutation_test(name: &str, mixer: fn(u64) -> u64, samples: u64) {
-    let (_, _, base_mean_z, base_stddev_z) = run_avalanche_test_results(name, mixer, samples);
+fn run_mutation_test(mut prng: PRNG, name: &str, mixer: fn(u64) -> u64, samples: u64) {
+    let (_, _, base_mean_z, base_stddev_z) =
+        run_avalanche_test_results(prng.get_prng(), name, mixer, samples);
     let base_badness = base_mean_z.abs().max(base_stddev_z.abs());
 
     let mut best = Mutation { name: "".to_string(), badness: f64::MAX };
@@ -228,7 +217,8 @@ fn run_mutation_test(name: &str, mixer: fn(u64) -> u64, samples: u64) {
 
         let mutated = |mut x: u64| { x = mixer(x); x ^ (x >> n) };
 
-        let (mean, stddev, mean_z, stddev_z) = avalanche_test(mutated, samples);
+        let (mean, stddev, mean_z, stddev_z) =
+            avalanche_test(prng.get_prng(), mutated, samples);
         let badness = mean_z.abs().max(stddev_z.abs());
 
         println!("{name}; {mut_name}:");
@@ -264,7 +254,8 @@ fn run_mutation_test(name: &str, mixer: fn(u64) -> u64, samples: u64) {
 
         let mutated = |x: u64| mixer(x).wrapping_add(1 << n);
 
-        let (mean, stddev, mean_z, stddev_z) = avalanche_test(mutated, samples);
+        let (mean, stddev, mean_z, stddev_z) =
+            avalanche_test(prng.get_prng(), mutated, samples);
         let badness = mean_z.abs().max(stddev_z.abs());
 
         println!("{name}; {mut_name}:");
@@ -281,7 +272,8 @@ fn run_mutation_test(name: &str, mixer: fn(u64) -> u64, samples: u64) {
 
         let mutated = |x: u64| mixer(x).wrapping_sub(1 << n);
 
-        let (mean, stddev, mean_z, stddev_z) = avalanche_test(mutated, samples);
+        let (mean, stddev, mean_z, stddev_z) =
+            avalanche_test(prng.get_prng(), mutated, samples);
         let badness = mean_z.abs().max(stddev_z.abs());
 
         println!("{name}; {mut_name}:");
@@ -298,7 +290,8 @@ fn run_mutation_test(name: &str, mixer: fn(u64) -> u64, samples: u64) {
 
         let mutated = |mut x: u64| { x = mixer(x); x.wrapping_mul(1 + (1 << n)) };
 
-        let (mean, stddev, mean_z, stddev_z) = avalanche_test(mutated, samples);
+        let (mean, stddev, mean_z, stddev_z) =
+            avalanche_test(prng.get_prng(), mutated, samples);
         let badness = mean_z.abs().max(stddev_z.abs());
 
         println!("{name}; {mut_name}:");
@@ -343,6 +336,8 @@ struct Mixer {
 }
 
 fn main() {
+    let mut prng = PRNG::from_seed(0);
+
     let args = Args::parse();
 
     println!(
@@ -373,11 +368,11 @@ fn main() {
 
     if args.mixer == "all" {
         for m in mixers {
-            run_test(m.name, m.func, args.samples);
+            run_test(prng.get_prng(), m.name, m.func, args.samples);
         }
     } else {
         match mixers.iter().find(|m| m.name == args.mixer) {
-            Some(m) => run_test(m.name, m.func, args.samples),
+            Some(m) => run_test(prng, m.name, m.func, args.samples),
             None => panic!("Unknown mixer: {}", args.mixer),
         }
     }
