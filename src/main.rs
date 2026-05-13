@@ -190,6 +190,14 @@ where
 struct Args {
     #[arg(long, default_value_t = 1 << 17)]
     samples: u64,
+
+    #[arg(long, default_value = "all")]
+    mixer: String,
+}
+
+struct Mixer {
+    name: &'static str,
+    func: fn(u64) -> u64,
 }
 
 fn main() {
@@ -202,17 +210,27 @@ fn main() {
     println!("{} samples.", args.samples);
     println!();
 
-    run_avalanche_test("trivial_mix", trivial_mix, args.samples);
-    run_avalanche_test("fake_ava_mix", fake_ava_mix, args.samples);
-    run_avalanche_test("faker_ava_mix", faker_ava_mix, args.samples);
-    run_avalanche_test("terrible_pi_mix", terrible_pi_mix, args.samples);
-    run_avalanche_test("lousy_pi_mix", lousy_pi_mix, args.samples);
-    run_avalanche_test("xorshuffle_mix (4 rounds)", |x| xorshuffle_mix(4, x), args.samples);
-    run_avalanche_test("xorshuffle_mix (5 rounds)", |x| xorshuffle_mix(5, x), args.samples);
-    run_avalanche_test("murmurhash3_mix", murmurhash3_mix, args.samples);
-    run_avalanche_test(
-        "extended_murmurhash3_mix (3 rounds)",
-        |x| extended_murmurhash3_mix(3, x),
-        args.samples);
-    run_avalanche_test("nasam_mix", nasam_mix, args.samples);
+    let mixers: &[Mixer] = &[
+        Mixer { name: "trivial", func: trivial_mix },
+        Mixer { name: "fake_ava", func: fake_ava_mix },
+        Mixer { name: "faker_ava", func: faker_ava_mix },
+        Mixer { name: "terrible_pi", func: terrible_pi_mix },
+        Mixer { name: "lousy_pi", func: lousy_pi_mix },
+        Mixer { name: "xorshuffle:4", func: |x| xorshuffle_mix(4, x) },
+        Mixer { name: "xorshuffle:5", func: |x| xorshuffle_mix(5, x) },
+        Mixer { name: "murmurhash3", func: murmurhash3_mix },
+        Mixer { name: "extended_murmurhash3:3", func: |x| extended_murmurhash3_mix(3, x) },
+        Mixer { name: "nasam", func: nasam_mix },
+    ];
+
+    if args.mixer == "all" {
+        for m in mixers {
+            run_avalanche_test(m.name, m.func, args.samples);
+        }
+    } else {
+        match mixers.iter().find(|m| m.name == args.mixer) {
+            Some(m) => run_avalanche_test(m.name, m.func, args.samples),
+            None => panic!("Unknown mixer: {}", args.mixer),
+        }
+    }
 }
