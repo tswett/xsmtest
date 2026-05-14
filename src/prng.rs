@@ -18,28 +18,9 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-// Pelle Evensen's NASAM, but modified to do four multiply rounds instead
-// of two. Original algorithm from
-// https://mostlymangling.blogspot.com/2020/01/nasam-not-another-strange-acronym-mixer.html
+use crate::mixers::double_nasam as mix;
 
-fn mix(mut x: u64) -> u64 {
-    const M1: u64 = 0x9E6C63D0676A9A99;
-    const M2: u64 = 0x9E6D62D06F6A9A9B;
-
-    x ^= x.rotate_right(25) ^ x.rotate_right(47);
-
-    for _ in 0..2 {
-        x = x.wrapping_mul(M1);
-        x ^= (x >> 23) ^ (x >> 51);
-
-        x = x.wrapping_mul(M2);
-        x ^= (x >> 23) ^ (x >> 51);
-    }
-
-    x
-}
-
-pub struct PRNG {
+pu struct PRNG {
     // Both the state and the pad are always assumed to be clean, in the sense
     // of not bearing any easily detectable relationship to each other or to
     // any other PRNG's state or pad
