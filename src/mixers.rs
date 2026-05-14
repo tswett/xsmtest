@@ -18,6 +18,8 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
+use std::ops::Range;
+
 pub trait Mixer: Sync {
     fn mix(&self, x: u64) -> u64;
 }
@@ -215,6 +217,65 @@ pub fn double_nasam(mut x: u64) -> u64 {
     }
 
     x
+}
+
+pub trait Mutation<'a>: Mixer {
+    fn new(inner: &'a dyn Mixer, operand: u32) -> Self;
+
+    const RANGE: Range<u32>;
+
+    const CODE_START: &'static str;
+    const CODE_END: &'static str;
+}
+
+pub struct XorshiftRightMut<'a> {
+    inner: &'a dyn Mixer,
+    operand: u32,
+}
+
+impl Mixer for XorshiftRightMut<'_> {
+    fn mix(&self, mut x: u64) -> u64 {
+        x = self.inner.mix(x);
+        x ^= x >> self.operand;
+
+        x
+    }
+}
+
+impl<'a> Mutation<'a> for XorshiftRightMut<'a> {
+    fn new(inner: &'a dyn Mixer, operand: u32) -> XorshiftRightMut<'a> {
+        XorshiftRightMut { inner, operand }
+    }
+
+    const RANGE: Range<u32> = 1..64;
+
+    const CODE_START: &'static str = "x ^= x >> ";
+    const CODE_END: &'static str = "";
+}
+
+pub struct MultiplyMut<'a> {
+    inner: &'a dyn Mixer,
+    operand: u32,
+}
+
+impl Mixer for MultiplyMut<'_> {
+    fn mix(&self, mut x: u64) -> u64 {
+        x = self.inner.mix(x);
+        x = x.wrapping_mul(1 + (1 << self.operand));
+
+        x
+    }
+}
+
+impl<'a> Mutation<'a> for MultiplyMut<'a> {
+    fn new(inner: &'a dyn Mixer, operand: u32) -> MultiplyMut<'a> {
+        MultiplyMut { inner, operand }
+    }
+
+    const RANGE: Range<u32> = 1..64;
+
+    const CODE_START: &'static str = "x = x.wrapping_mul(1 + (1 << ";
+    const CODE_END: &'static str = "))";
 }
 
 pub struct MixerInfo<'a> {

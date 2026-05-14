@@ -25,8 +25,8 @@ use clap::{Parser, ValueEnum};
 use rayon::iter::{ParallelBridge, ParallelIterator};
 use std::ops::{Add, AddAssign};
 
+use crate::mixers::{Mixer, MultiplyMut, Mutation, XorshiftRightMut};
 use crate::prng::PRNG;
-use crate::mixers::Mixer;
 
 #[derive(Clone, Copy, Default)]
 struct RawStats {
@@ -154,7 +154,7 @@ impl Iterator for BatchMaker {
     }
 }
 
-fn avalanche_test(mut prng: PRNG, mixer: &dyn Mixer, samples: u64) -> SampleStats
+fn avalanche_test(prng: PRNG, mixer: &dyn Mixer, samples: u64) -> SampleStats
 {
     let stats: RawStats = BatchMaker { prng, samples }
         .par_bridge()
@@ -187,95 +187,105 @@ fn run_avalanche_test(prng: PRNG, name: &str, mixer: &dyn Mixer, samples: u64)
     run_avalanche_test_results(prng, name, mixer, samples);
 }
 
-#[derive(Clone)]
-struct Mutation {
-    name: String,
+#[derive(Clone, Copy)]
+struct MutationInfo {
+    code_start: &'static str,
+    operand: u32,
+    code_end: &'static str,
     badness: f64,
+}
+
+fn run_mutation_test_on<'a, M: Mutation<'a>>
+    (mut prng: PRNG, name: &str, mixer: &'a dyn Mixer, samples: u64)
+    -> (MutationInfo, MutationInfo)
+{
+    let mut best = MutationInfo {
+        code_start: "",
+        operand: 0,
+        code_end: "",
+        badness: f64::MAX,
+    };
+    let mut worst = MutationInfo {
+        code_start: "",
+        operand: 0,
+        code_end: "",
+        badness: -1.0,
+    };
+
+    for operand in M::RANGE {
+        let mutated = M::new(mixer, operand);
+
+        let stats = avalanche_test(prng.get_prng(), &mutated, samples);
+        let badness = stats.mean_z.abs().max(stats.stddev_z.abs());
+
+        println!("{}; {}{}{}:", name, M::CODE_START, operand, M::CODE_END);
+        print_hamming_dist_stats(stats);
+        println!();
+
+        let mutation_info = MutationInfo {
+            code_start: M::CODE_START,
+            operand,
+            code_end: M::CODE_END,
+            badness,
+        };
+
+        if badness < best.badness { best = mutation_info }
+        if badness > worst.badness { worst = mutation_info }
+    }
+
+    (best, worst)
 }
 
 fn run_mutation_test(mut prng: PRNG, name: &str, mixer: &dyn Mixer, samples: u64)
 {
-    panic!()
-    /*
     let base_stats = run_avalanche_test_results(prng.get_prng(), name, mixer, samples);
     let base_badness = base_stats.mean_z.abs().max(base_stats.stddev_z.abs());
 
-    let mut best = Mutation { name: "".to_string(), badness: f64::MAX };
-    let mut best_multiply = Mutation { name: "".to_string(), badness: f64::MAX };
-    let mut worst = Mutation { name: "".to_string(), badness: -1.0 };
+    let mut best = MutationInfo {
+        code_start: "",
+        operand: 0,
+        code_end: "",
+        badness: f64::MAX,
+    };
+    let mut worst = MutationInfo {
+        code_start: "",
+        operand: 0,
+        code_end: "",
+        badness: -1.0,
+    };
 
-    for n in 1..64 {
-        let mut_name = format!("x ^= x >> {n}");
+    let (best_xorshift_right, worst_xorshift_right) =
+        run_mutation_test_on::<XorshiftRightMut>(prng.get_prng(), name, mixer, samples);
 
-        let mutated = |mut x: u64| { x = mixer(x); x ^ (x >> n) };
+    if best_xorshift_right.badness < best.badness { best = best_xorshift_right }
+    if worst_xorshift_right.badness > worst.badness { worst = worst_xorshift_right }
 
-        let stats = avalanche_test(prng.get_prng(), &mutated, samples);
-        let badness = stats.mean_z.abs().max(stats.stddev_z.abs());
+    let (best_multiply, worst_multiply) =
+        run_mutation_test_on::<MultiplyMut>(prng.get_prng(), name, mixer, samples);
 
-        println!("{name}; {mut_name}:");
-        print_hamming_dist_stats(stats);
-        println!();
-
-        if badness < best.badness { best = Mutation { name: mut_name.clone(), badness: badness } }
-        if badness > worst.badness { worst = Mutation { name: mut_name.clone(), badness: badness } }
-    }
-
-    for n in 0..64 {
-        let mut_name = format!("x += 1 << {n}");
-
-        let mutated = |x: u64| mixer(x).wrapping_add(1 << n);
-
-        let stats = avalanche_test(prng.get_prng(), &mutated, samples);
-        let badness = stats.mean_z.abs().max(stats.stddev_z.abs());
-
-        println!("{name}; {mut_name}:");
-        print_hamming_dist_stats(stats);
-        println!();
-
-        if badness < best.badness { best = Mutation { name: mut_name.clone(), badness: badness } }
-        if badness > worst.badness { worst = Mutation { name: mut_name.clone(), badness: badness } }
-    }
-
-    for n in 0..63 {
-        let mut_name = format!("x -= 1 << {n}");
-
-        let mutated = |x: u64| mixer(x).wrapping_sub(1 << n);
-
-        let stats = avalanche_test(prng.get_prng(), &mutated, samples);
-        let badness = stats.mean_z.abs().max(stats.stddev_z.abs());
-
-        println!("{name}; {mut_name}:");
-        print_hamming_dist_stats(stats);
-        println!();
-
-        if badness < best.badness { best = Mutation { name: mut_name.clone(), badness: badness } }
-        if badness > worst.badness { worst = Mutation { name: mut_name.clone(), badness: badness } }
-    }
-
-    for n in 1..64 {
-        let mut_name = format!("x *= 1 + (1 << {n})");
-
-        let mutated = |mut x: u64| { x = mixer(x); x.wrapping_mul(1 + (1 << n)) };
-
-        let stats = avalanche_test(prng.get_prng(), &mutated, samples);
-        let badness = stats.mean_z.abs().max(stats.stddev_z.abs());
-
-        println!("{name}; {mut_name}:");
-        print_hamming_dist_stats(stats);
-        println!();
-
-        if badness < best_multiply.badness { best_multiply = Mutation { name: mut_name.clone(), badness: badness } }
-        if badness > worst.badness { worst = Mutation { name: mut_name.clone(), badness: badness } }
-    }
-
-    if best_multiply.badness < best.badness { best = best_multiply.clone() }
+    if best_multiply.badness < best.badness { best = best_multiply }
+    if worst_multiply.badness > worst.badness { worst = worst_multiply }
 
     println!("Baseline: {:.2}", base_badness);
-    println!("Best multiply: {} ({:.2})", best_multiply.name, best_multiply.badness);
-    println!("Best: {} ({:.2})", best.name, best.badness);
-    println!("Worst: {} ({:.2})", worst.name, worst.badness);
+    println!(
+        "Best multiply: {}{}{} ({:.2})",
+        best_multiply.code_start,
+        best_multiply.operand,
+        best_multiply.code_end,
+        best_multiply.badness);
+    println!(
+        "Best: {}{}{} ({:.2})",
+        best.code_start,
+        best.operand,
+        best.code_end,
+        best.badness);
+    println!(
+        "Worst: {}{}{} ({:.2})",
+        worst.code_start,
+        worst.operand,
+        worst.code_end,
+        worst.badness);
     println!();
-    */
 }
 
 #[derive(Clone, ValueEnum)]
