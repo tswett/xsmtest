@@ -22,8 +22,11 @@ mod mixers;
 mod prng;
 
 use clap::{Parser, ValueEnum};
-use prng::PRNG;
+use rayon::iter::{ParallelBridge, ParallelIterator};
 use std::ops::{Add, AddAssign};
+
+use crate::prng::PRNG;
+use crate::mixers::Mixer;
 
 #[derive(Clone, Copy, Default)]
 struct RawStats {
@@ -40,13 +43,17 @@ impl RawStats {
     }
 
     fn sample_stats(self, expected_mean: f64, expected_stddev: f64) -> SampleStats {
+        let n_i128: i128 = self.count as i128;
+        let sum_i128: i128 = self.sum as i128;
+        let sum_sq_i128: i128 = self.sum_sq as i128;
+
         let n = self.count as f64;
 
         let sample_mean = (self.sum as f64) / (self.count as f64);
 
         // sum_sq/n - (sum/n)^2, rewritten to avoid floating point subtraction
         let sample_variance =
-            ((self.sum_sq * self.count - self.sum * self.sum) as f64) / (n * n);
+            ((sum_sq_i128 * n_i128 - sum_i128 * sum_i128) as f64) / (n * n);
 
         let sample_stddev = sample_variance.sqrt();
 
@@ -93,7 +100,7 @@ fn print_hamming_dist_stats(stats: SampleStats) {
         "Standard deviation   : {:9.6} (Z = {:6.2})", stats.sample_stddev, stats.stddev_z);
 }
 
-fn avalanche_test_inner(mut prng: PRNG, mix: &dyn Fn(u64) -> u64, samples: u64)
+fn avalanche_test_inner(mut prng: PRNG, mixer: &dyn Mixer, samples: u64)
     -> RawStats
 {
     let mut stats = RawStats::default();
@@ -101,11 +108,11 @@ fn avalanche_test_inner(mut prng: PRNG, mix: &dyn Fn(u64) -> u64, samples: u64)
     for _ in 0..samples {
         let input1: u64 = prng.get_number();
 
-        let output1 = mix(input1);
+        let output1 = mixer.mix(input1);
 
         for bit in 0..64 {
             let input2 = input1 ^ (1u64 << bit);
-            let output2 = mix(input2);
+            let output2 = mixer.mix(input2);
 
             let distance = (output1 ^ output2).count_ones() as i64;
 
@@ -116,19 +123,44 @@ fn avalanche_test_inner(mut prng: PRNG, mix: &dyn Fn(u64) -> u64, samples: u64)
     stats
 }
 
-fn avalanche_test(mut prng: PRNG, mix: &dyn Fn(u64) -> u64, samples: u64) -> SampleStats
-{
-    const BATCH_SIZE: u64 = 4096;
+const BATCH_SIZE: u64 = 4096;
 
-    let mut samples_to_go = samples;
-    let mut stats = RawStats::default();
+struct BatchMaker {
+    prng: PRNG,
+    samples: u64,
+}
 
-    while samples_to_go > 0 {
-        let batch_samples = samples_to_go.max(BATCH_SIZE);
-        samples_to_go -= batch_samples;
+struct BatchInfo {
+    prng: PRNG,
+    samples: u64,
+}
 
-        stats += avalanche_test_inner(prng.get_prng(), mix, batch_samples);
+impl Iterator for BatchMaker {
+    type Item = BatchInfo;
+
+    fn next(&mut self) -> Option<BatchInfo> {
+        if self.samples == 0 {
+            None
+        } else {
+            let batch_info = BatchInfo {
+                prng: self.prng.get_prng(),
+                samples: self.samples.min(BATCH_SIZE),
+            };
+
+            self.samples -= batch_info.samples;
+
+            Some(batch_info)
+        }
     }
+}
+
+fn avalanche_test(mut prng: PRNG, mixer: &dyn Mixer, samples: u64) -> SampleStats
+{
+    let stats: RawStats = BatchMaker { prng, samples }
+        .par_bridge()
+        .map(|batch_info|
+            avalanche_test_inner(batch_info.prng, mixer, batch_info.samples))
+        .reduce(RawStats::default, |a, b| a + b);
 
     let expected_mean: f64 = 32.0;
     let expected_stddev: f64 = 4.0;
@@ -136,8 +168,7 @@ fn avalanche_test(mut prng: PRNG, mix: &dyn Fn(u64) -> u64, samples: u64) -> Sam
     stats.sample_stats(expected_mean, expected_stddev)
 }
 
-fn run_avalanche_test_results(
-    prng: PRNG, name: &str, mixer: &dyn Fn(u64) -> u64, samples: u64)
+fn run_avalanche_test_results(prng: PRNG, name: &str, mixer: &dyn Mixer, samples: u64)
     -> SampleStats
 {
     println!("Testing {}:", name);
@@ -150,7 +181,7 @@ fn run_avalanche_test_results(
     stats
 }
 
-fn run_avalanche_test(prng: PRNG, name: &str, mixer: &dyn Fn(u64) -> u64, samples: u64)
+fn run_avalanche_test(prng: PRNG, name: &str, mixer: &dyn Mixer, samples: u64)
     -> ()
 {
     run_avalanche_test_results(prng, name, mixer, samples);
@@ -162,9 +193,10 @@ struct Mutation {
     badness: f64,
 }
 
-fn run_mutation_test(
-    mut prng: PRNG, name: &str, mixer: &dyn Fn(u64) -> u64, samples: u64)
+fn run_mutation_test(mut prng: PRNG, name: &str, mixer: &dyn Mixer, samples: u64)
 {
+    panic!()
+    /*
     let base_stats = run_avalanche_test_results(prng.get_prng(), name, mixer, samples);
     let base_badness = base_stats.mean_z.abs().max(base_stats.stddev_z.abs());
 
@@ -243,6 +275,7 @@ fn run_mutation_test(
     println!("Best: {} ({:.2})", best.name, best.badness);
     println!("Worst: {} ({:.2})", worst.name, worst.badness);
     println!();
+    */
 }
 
 #[derive(Clone, ValueEnum)]
@@ -282,11 +315,11 @@ fn main() {
 
     if args.mixer == "all" {
         for m in mixers::MIXERS {
-            run_test(prng.get_prng(), m.name, &m.func, args.samples);
+            run_test(prng.get_prng(), m.name, m.func, args.samples);
         }
     } else {
         match mixers::MIXERS.iter().find(|m| m.name == args.mixer) {
-            Some(m) => run_test(prng, m.name, &m.func, args.samples),
+            Some(m) => run_test(prng, m.name, m.func, args.samples),
             None => panic!("Unknown mixer: {}", args.mixer),
         }
     }
