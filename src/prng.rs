@@ -20,7 +20,7 @@
 
 use crate::mixers::double_nasam as mix;
 
-pu struct PRNG {
+pub struct PRNG {
     // Both the state and the pad are always assumed to be clean, in the sense
     // of not bearing any easily detectable relationship to each other or to
     // any other PRNG's state or pad

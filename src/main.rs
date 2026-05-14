@@ -23,14 +23,80 @@ mod prng;
 
 use clap::{Parser, ValueEnum};
 use prng::PRNG;
+use std::ops::{Add, AddAssign};
 
-fn avalanche_test<F>(mut prng: PRNG, mix: F, samples: u64) -> (f64, f64, f64, f64)
-where
-    F: Fn(u64) -> u64,
+#[derive(Clone, Copy, Default)]
+struct RawStats {
+    count: i64,
+    sum: i64,
+    sum_sq: i64,
+}
+
+impl RawStats {
+    fn tally(&mut self, value: i64) {
+        self.count += 1;
+        self.sum += value;
+        self.sum_sq += value * value;
+    }
+
+    fn sample_stats(self, expected_mean: f64, expected_stddev: f64) -> SampleStats {
+        let n = self.count as f64;
+
+        let sample_mean = (self.sum as f64) / (self.count as f64);
+
+        // sum_sq/n - (sum/n)^2, rewritten to avoid floating point subtraction
+        let sample_variance =
+            ((self.sum_sq * self.count - self.sum * self.sum) as f64) / (n * n);
+
+        let sample_stddev = sample_variance.sqrt();
+
+        let mean_z = (sample_mean - expected_mean) / (expected_stddev / n.sqrt());
+
+        // this is an approximation, hopefully not a bad one
+        let stddev_z =
+            (sample_stddev - expected_stddev) / (expected_stddev / (2.0 * n).sqrt());
+
+        SampleStats { sample_mean, sample_stddev, mean_z, stddev_z }
+    }
+}
+
+impl Add for RawStats {
+    type Output = RawStats;
+
+    fn add(self, rhs: RawStats) -> RawStats {
+        RawStats {
+            count: self.count + rhs.count,
+            sum: self.sum + rhs.sum,
+            sum_sq: self.sum_sq + rhs.sum_sq,
+        }
+    }
+}
+
+impl AddAssign for RawStats {
+    fn add_assign(&mut self, rhs: RawStats) {
+        *self = *self + rhs;
+    }
+}
+
+#[derive(Clone, Copy)]
+struct SampleStats {
+    sample_mean: f64,
+    sample_stddev: f64,
+    mean_z: f64,
+    stddev_z: f64
+}
+
+fn print_hamming_dist_stats(stats: SampleStats) {
+    println!(
+        "Mean Hamming distance: {:9.6} (Z = {:6.2})", stats.sample_mean, stats.mean_z);
+    println!(
+        "Standard deviation   : {:9.6} (Z = {:6.2})", stats.sample_stddev, stats.stddev_z);
+}
+
+fn avalanche_test_inner(mut prng: PRNG, mix: &dyn Fn(u64) -> u64, samples: u64)
+    -> RawStats
 {
-    let mut n: u64 = 0;
-    let mut sum: u64 = 0;
-    let mut sum_sq: u64 = 0;
+    let mut stats = RawStats::default();
 
     for _ in 0..samples {
         let input1: u64 = prng.get_number();
@@ -41,42 +107,52 @@ where
             let input2 = input1 ^ (1u64 << bit);
             let output2 = mix(input2);
 
-            let distance = (output1 ^ output2).count_ones() as u64;
+            let distance = (output1 ^ output2).count_ones() as i64;
 
-            n += 1;
-            sum += distance;
-            sum_sq += distance * distance;
+            stats.tally(distance);
         }
     }
 
-    let mean = (sum as f64) / (n as f64);
-    let variance = (sum_sq as f64) / (n as f64) - mean * mean;
-    let stddev = variance.sqrt();
-
-    let mean_sample_sd = 4.0 / (n as f64).sqrt();
-    let stddev_sample_sd = 4.0 / (2.0 * (n as f64)).sqrt();
-
-    let mean_z = (mean - 32.0) / mean_sample_sd;
-    let stddev_z = (stddev - 4.0) / stddev_sample_sd;
-
-    (mean, stddev, mean_z, stddev_z)
+    stats
 }
 
-fn run_avalanche_test_results(prng: PRNG, name: &str, mixer: fn(u64) -> u64, samples: u64)
-    -> (f64, f64, f64, f64)
+fn avalanche_test(mut prng: PRNG, mix: &dyn Fn(u64) -> u64, samples: u64) -> SampleStats
+{
+    const BATCH_SIZE: u64 = 4096;
+
+    let mut samples_to_go = samples;
+    let mut stats = RawStats::default();
+
+    while samples_to_go > 0 {
+        let batch_samples = samples_to_go.max(BATCH_SIZE);
+        samples_to_go -= batch_samples;
+
+        stats += avalanche_test_inner(prng.get_prng(), mix, batch_samples);
+    }
+
+    let expected_mean: f64 = 32.0;
+    let expected_stddev: f64 = 4.0;
+
+    stats.sample_stats(expected_mean, expected_stddev)
+}
+
+fn run_avalanche_test_results(
+    prng: PRNG, name: &str, mixer: &dyn Fn(u64) -> u64, samples: u64)
+    -> SampleStats
 {
     println!("Testing {}:", name);
 
-    let (mean, stddev, mean_z, stddev_z) = avalanche_test(prng, mixer, samples);
+    let stats = avalanche_test(prng, mixer, samples);
 
-    println!("Mean Hamming distance: {:9.6} (Z = {:6.2})", mean, mean_z);
-    println!("Standard deviation   : {:9.6} (Z = {:6.2})", stddev, stddev_z);
+    print_hamming_dist_stats(stats);
     println!();
 
-    (mean, stddev, mean_z, stddev_z)
+    stats
 }
 
-fn run_avalanche_test(prng: PRNG, name: &str, mixer: fn(u64) -> u64, samples: u64) -> () {
+fn run_avalanche_test(prng: PRNG, name: &str, mixer: &dyn Fn(u64) -> u64, samples: u64)
+    -> ()
+{
     run_avalanche_test_results(prng, name, mixer, samples);
 }
 
@@ -86,10 +162,11 @@ struct Mutation {
     badness: f64,
 }
 
-fn run_mutation_test(mut prng: PRNG, name: &str, mixer: fn(u64) -> u64, samples: u64) {
-    let (_, _, base_mean_z, base_stddev_z) =
-        run_avalanche_test_results(prng.get_prng(), name, mixer, samples);
-    let base_badness = base_mean_z.abs().max(base_stddev_z.abs());
+fn run_mutation_test(
+    mut prng: PRNG, name: &str, mixer: &dyn Fn(u64) -> u64, samples: u64)
+{
+    let base_stats = run_avalanche_test_results(prng.get_prng(), name, mixer, samples);
+    let base_badness = base_stats.mean_z.abs().max(base_stats.stddev_z.abs());
 
     let mut best = Mutation { name: "".to_string(), badness: f64::MAX };
     let mut best_multiply = Mutation { name: "".to_string(), badness: f64::MAX };
@@ -100,50 +177,27 @@ fn run_mutation_test(mut prng: PRNG, name: &str, mixer: fn(u64) -> u64, samples:
 
         let mutated = |mut x: u64| { x = mixer(x); x ^ (x >> n) };
 
-        let (mean, stddev, mean_z, stddev_z) =
-            avalanche_test(prng.get_prng(), mutated, samples);
-        let badness = mean_z.abs().max(stddev_z.abs());
+        let stats = avalanche_test(prng.get_prng(), &mutated, samples);
+        let badness = stats.mean_z.abs().max(stats.stddev_z.abs());
 
         println!("{name}; {mut_name}:");
-        println!("Mean Hamming distance: {:9.6} (Z = {:6.2})", mean, mean_z);
-        println!("Standard deviation   : {:9.6} (Z = {:6.2})", stddev, stddev_z);
+        print_hamming_dist_stats(stats);
         println!();
 
         if badness < best.badness { best = Mutation { name: mut_name.clone(), badness: badness } }
         if badness > worst.badness { worst = Mutation { name: mut_name.clone(), badness: badness } }
     }
-
-    /*
-    for n in 1..64 {
-        let mut_name = format!("x ^= x << {n}");
-
-        let mutated = |mut x: u64| { x = mixer(x); x ^ (x << n) };
-
-        let (mean, stddev, mean_z, stddev_z) = avalanche_test(mutated, samples);
-        let badness = mean_z.abs().max(stddev_z.abs());
-
-        println!("{name}; {mut_name}:");
-        println!("Mean Hamming distance: {:9.6} (Z = {:6.2})", mean, mean_z);
-        println!("Standard deviation   : {:9.6} (Z = {:6.2})", stddev, stddev_z);
-        println!();
-
-        if badness < best.badness { best = Mutation { name: mut_name.clone(), badness: badness } }
-        if badness > worst.badness { worst = Mutation { name: mut_name.clone(), badness: badness } }
-    }
-    */
 
     for n in 0..64 {
         let mut_name = format!("x += 1 << {n}");
 
         let mutated = |x: u64| mixer(x).wrapping_add(1 << n);
 
-        let (mean, stddev, mean_z, stddev_z) =
-            avalanche_test(prng.get_prng(), mutated, samples);
-        let badness = mean_z.abs().max(stddev_z.abs());
+        let stats = avalanche_test(prng.get_prng(), &mutated, samples);
+        let badness = stats.mean_z.abs().max(stats.stddev_z.abs());
 
         println!("{name}; {mut_name}:");
-        println!("Mean Hamming distance: {:9.6} (Z = {:6.2})", mean, mean_z);
-        println!("Standard deviation   : {:9.6} (Z = {:6.2})", stddev, stddev_z);
+        print_hamming_dist_stats(stats);
         println!();
 
         if badness < best.badness { best = Mutation { name: mut_name.clone(), badness: badness } }
@@ -155,13 +209,11 @@ fn run_mutation_test(mut prng: PRNG, name: &str, mixer: fn(u64) -> u64, samples:
 
         let mutated = |x: u64| mixer(x).wrapping_sub(1 << n);
 
-        let (mean, stddev, mean_z, stddev_z) =
-            avalanche_test(prng.get_prng(), mutated, samples);
-        let badness = mean_z.abs().max(stddev_z.abs());
+        let stats = avalanche_test(prng.get_prng(), &mutated, samples);
+        let badness = stats.mean_z.abs().max(stats.stddev_z.abs());
 
         println!("{name}; {mut_name}:");
-        println!("Mean Hamming distance: {:9.6} (Z = {:6.2})", mean, mean_z);
-        println!("Standard deviation   : {:9.6} (Z = {:6.2})", stddev, stddev_z);
+        print_hamming_dist_stats(stats);
         println!();
 
         if badness < best.badness { best = Mutation { name: mut_name.clone(), badness: badness } }
@@ -173,13 +225,11 @@ fn run_mutation_test(mut prng: PRNG, name: &str, mixer: fn(u64) -> u64, samples:
 
         let mutated = |mut x: u64| { x = mixer(x); x.wrapping_mul(1 + (1 << n)) };
 
-        let (mean, stddev, mean_z, stddev_z) =
-            avalanche_test(prng.get_prng(), mutated, samples);
-        let badness = mean_z.abs().max(stddev_z.abs());
+        let stats = avalanche_test(prng.get_prng(), &mutated, samples);
+        let badness = stats.mean_z.abs().max(stats.stddev_z.abs());
 
         println!("{name}; {mut_name}:");
-        println!("Mean Hamming distance: {:9.6} (Z = {:6.2})", mean, mean_z);
-        println!("Standard deviation   : {:9.6} (Z = {:6.2})", stddev, stddev_z);
+        print_hamming_dist_stats(stats);
         println!();
 
         if badness < best_multiply.badness { best_multiply = Mutation { name: mut_name.clone(), badness: badness } }
@@ -232,11 +282,11 @@ fn main() {
 
     if args.mixer == "all" {
         for m in mixers::MIXERS {
-            run_test(prng.get_prng(), m.name, m.func, args.samples);
+            run_test(prng.get_prng(), m.name, &m.func, args.samples);
         }
     } else {
         match mixers::MIXERS.iter().find(|m| m.name == args.mixer) {
-            Some(m) => run_test(prng, m.name, m.func, args.samples),
+            Some(m) => run_test(prng, m.name, &m.func, args.samples),
             None => panic!("Unknown mixer: {}", args.mixer),
         }
     }
