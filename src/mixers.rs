@@ -20,6 +20,17 @@
 
 use std::ops::Range;
 
+// Multiplicative inverse
+fn mulinv(x: u64) -> u64 {
+    let mut inv = x;
+
+    for _ in 0..5 {
+        inv = inv.wrapping_mul(2_u64.wrapping_sub(x.wrapping_mul(inv)));
+    }
+
+    inv
+}
+
 pub trait Mixer: Sync {
     fn mix(&self, x: u64) -> u64;
 }
@@ -276,6 +287,31 @@ impl<'a> Mutation<'a> for MultiplyMut<'a> {
 
     const CODE_START: &'static str = "x = x.wrapping_mul(1 + (1 << ";
     const CODE_END: &'static str = "))";
+}
+
+pub struct MultiplyInvMut<'a> {
+    inner: &'a dyn Mixer,
+    operand: u32,
+}
+
+impl Mixer for MultiplyInvMut<'_> {
+    fn mix(&self, mut x: u64) -> u64 {
+        x = self.inner.mix(x);
+        x = x.wrapping_mul(mulinv(1 + (1 << self.operand)));
+
+        x
+    }
+}
+
+impl<'a> Mutation<'a> for MultiplyInvMut<'a> {
+    fn new(inner: &'a dyn Mixer, operand: u32) -> MultiplyInvMut<'a> {
+        MultiplyInvMut { inner, operand }
+    }
+
+    const RANGE: Range<u32> = 1..32;
+
+    const CODE_START: &'static str = "x = x.wrapping_mul(mulinv(1 + (1 << ";
+    const CODE_END: &'static str = ")))";
 }
 
 pub struct MixerInfo<'a> {

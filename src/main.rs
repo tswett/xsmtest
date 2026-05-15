@@ -25,7 +25,7 @@ use clap::{Parser, ValueEnum};
 use rayon::iter::{ParallelBridge, ParallelIterator};
 use std::ops::{Add, AddAssign};
 
-use crate::mixers::{Mixer, MultiplyMut, Mutation, XorshiftRightMut};
+use crate::mixers::{Mixer, MultiplyInvMut, MultiplyMut, Mutation, XorshiftRightMut};
 use crate::prng::PRNG;
 
 #[derive(Clone, Copy, Default)]
@@ -265,6 +265,12 @@ fn run_mutation_test(mut prng: PRNG, name: &str, mixer: &dyn Mixer, samples: u64
 
     if best_multiply.badness < best.badness { best = best_multiply }
     if worst_multiply.badness > worst.badness { worst = worst_multiply }
+
+    let (best_multiply_inv, worst_multiply_inv) =
+        run_mutation_test_on::<MultiplyInvMut>(prng.get_prng(), name, mixer, samples);
+
+    if best_multiply_inv.badness < best.badness { best = best_multiply_inv }
+    if worst_multiply_inv.badness > worst.badness { worst = worst_multiply_inv }
 
     println!("Baseline: {:.2}", base_badness);
     println!(
