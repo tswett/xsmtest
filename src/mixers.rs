@@ -149,6 +149,18 @@ impl Mixer for MutaShuffle {
     }
 }
 
+// A terrible mixer that should be easy to automatically analyze.
+struct EasyNut;
+impl Mixer for EasyNut {
+    fn mix(&self, mut x: u64) -> u64 {
+        x = x.wrapping_mul(19);
+        x ^= x >> 1;
+        x = x.wrapping_mul(19);
+
+        x
+    }
+}
+
 // The venerable MurMurHash3 finalizer, taken from
 // https://blog.teamleadnet.com/2012/08/murmurhash3-ultra-fast-hash-algorithm.html
 struct MurMurHash3;
@@ -328,6 +340,7 @@ pub const MIXERS: &[MixerInfo] = &[
     MixerInfo { name: "xorshuffle:4", func: &XorShuffle { rounds: 4 } },
     MixerInfo { name: "xorshuffle:5", func: &XorShuffle { rounds: 5 } },
     MixerInfo { name: "mutashuffle", func: &MutaShuffle },
+    MixerInfo { name: "easynut", func: &EasyNut { } },
     MixerInfo { name: "murmurhash3", func: &MurMurHash3 },
     MixerInfo { name: "extended_murmurhash3:3", func: &ExtendedMurMurHash3 { rounds: 3 } },
     MixerInfo { name: "nasam", func: &NASAM { } },

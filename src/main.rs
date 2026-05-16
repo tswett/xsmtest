@@ -100,8 +100,7 @@ fn print_hamming_dist_stats(stats: SampleStats) {
         "Standard deviation   : {:9.6} (Z = {:6.2})", stats.sample_stddev, stats.stddev_z);
 }
 
-fn avalanche_test_inner(mut prng: PRNG, mixer: &dyn Mixer, samples: u64)
-    -> RawStats
+fn avalanche_test_inner(mut prng: PRNG, mixer: &dyn Mixer, samples: u64) -> RawStats
 {
     let mut stats = RawStats::default();
 
@@ -171,7 +170,7 @@ fn avalanche_test(prng: PRNG, mixer: &dyn Mixer, samples: u64) -> SampleStats
 fn run_avalanche_test_results(prng: PRNG, name: &str, mixer: &dyn Mixer, samples: u64)
     -> SampleStats
 {
-    println!("Testing {}:", name);
+    println!("Testing {name} with {samples} samples:");
 
     let stats = avalanche_test(prng, mixer, samples);
 
@@ -294,10 +293,53 @@ fn run_mutation_test(mut prng: PRNG, name: &str, mixer: &dyn Mixer, samples: u64
     println!();
 }
 
+fn run_powers_test(_prng: PRNG, name: &str, mixer: &dyn Mixer, _samples: u64) {
+    println!("Calling {} with powers of 2:", name);
+
+    let mut last_output: Option<u64> = None;
+
+    for i in 0..64 {
+        let output = mixer.mix(1 << i);
+
+        let distance = last_output.map(|last_output| {
+            let last_output_masked = last_output & !(1 << 63);
+            let output_shifted = output >> 1;
+            (last_output_masked ^ output_shifted).count_ones()
+        });
+
+        print!("{:>2}  ", i);
+
+        for b in (0..64).rev() {
+            let color_code = if output & (1 << b) != 0 {
+                "\x1b[7m:"
+            } else {
+                "\x1b[0m."
+            };
+
+            print!("{}", color_code);
+        }
+
+        print!("\x1b[0m");
+
+        print!("  ");
+        print!("{}", if output % 2 == 1 { 'X' } else { ' ' });
+
+        print!("  ");
+        if let Some(distance) = distance {
+            println!("{:>2}", distance)
+        } else {
+            println!()
+        }
+
+        last_output = Some(output);
+    }
+}
+
 #[derive(Clone, ValueEnum)]
 enum TestType {
     Avalanche,
     Mutation,
+    Powers,
 }
 
 #[derive(Parser)]
@@ -317,16 +359,10 @@ fn main() {
 
     let args = Args::parse();
 
-    println!(
-        "Running avalanche tests. Theoretically, the mean should be 32 \
-        and the standard deviation should be 4.");
-    println!();
-    println!("{} samples.", args.samples);
-    println!();
-
     let run_test = match args.test {
         TestType::Avalanche => run_avalanche_test,
         TestType::Mutation => run_mutation_test,
+        TestType::Powers => run_powers_test,
     };
 
     if args.mixer == "all" {
