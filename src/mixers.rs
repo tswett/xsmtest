@@ -161,10 +161,10 @@ impl Mixer for EasyNut {
     }
 }
 
-// The venerable MurMurHash3 finalizer, taken from
-// https://blog.teamleadnet.com/2012/08/murmurhash3-ultra-fast-hash-algorithm.html
-struct MurMurHash3;
-impl Mixer for MurMurHash3 {
+// The venerable MurmurHash3 finalizer (fmix64), taken from
+// https://github.com/aappleby/smhasher/blob/master/src/MurmurHash3.cpp
+struct MurmurHash3;
+impl Mixer for MurmurHash3 {
     fn mix(&self, mut x: u64) -> u64 {
         const M1: u64 = 0xFF51AFD7ED558CCD;
         const M2: u64 = 0xC4CEB9FE1A85EC53;
@@ -181,10 +181,10 @@ impl Mixer for MurMurHash3 {
     }
 }
 
-struct ExtendedMurMurHash3 {
+struct ExtendedMurmurHash3 {
     rounds: u32,
 }
-impl Mixer for ExtendedMurMurHash3 {
+impl Mixer for ExtendedMurmurHash3 {
     fn mix(&self, mut x: u64) -> u64 {
         const M1: u64 = 0xFF51AFD7ED558CCD;
         const M2: u64 = 0xC4CEB9FE1A85EC53;
@@ -222,9 +222,7 @@ impl Mixer for NASAM {
 
 // NASAM, modified to do four rounds instead of two
 // 
-// This is actually used as a PRNG, instead of being subjected to tests like
-// the other mixers here are. It's exposed as a function so that the PRNG
-// module can use it without having to worry about closures.
+// Exposed as a function so that the PRNG module can use it easily.
 pub fn double_nasam(mut x: u64) -> u64 {
     const M1: u64 = 0x9E6C63D0676A9A99;
     const M2: u64 = 0x9E6D62D06F6A9A9B;
@@ -240,6 +238,22 @@ pub fn double_nasam(mut x: u64) -> u64 {
     }
 
     x
+}
+
+struct DoubleNasam;
+impl Mixer for DoubleNasam {
+    fn mix(&self, x: u64) -> u64 {
+        double_nasam(x)
+    }
+}
+
+struct PreXorPi<M: Mixer> {
+    inner: M,
+}
+impl<M: Mixer> Mixer for PreXorPi<M> {
+    fn mix(&self, x: u64) -> u64 {
+        self.inner.mix(x ^ PI64)
+    }
 }
 
 pub trait Mutation<'a>: Mixer {
@@ -341,7 +355,16 @@ pub const MIXERS: &[MixerInfo] = &[
     MixerInfo { name: "xorshuffle:5", func: &XorShuffle { rounds: 5 } },
     MixerInfo { name: "mutashuffle", func: &MutaShuffle },
     MixerInfo { name: "easynut", func: &EasyNut { } },
-    MixerInfo { name: "murmurhash3", func: &MurMurHash3 },
-    MixerInfo { name: "extended_murmurhash3:3", func: &ExtendedMurMurHash3 { rounds: 3 } },
+    MixerInfo { name: "murmurhash3", func: &MurmurHash3 },
+    MixerInfo { name: "extended_murmurhash3:3", func: &ExtendedMurmurHash3 { rounds: 3 } },
+    MixerInfo {
+        name: "prexorpi:murmurhash3",
+        func: &PreXorPi { inner: MurmurHash3 { } }
+    },
     MixerInfo { name: "nasam", func: &NASAM { } },
+    MixerInfo { name: "double_nasam", func: &DoubleNasam { } },
+    MixerInfo {
+        name: "prexorpi:nasam",
+        func: &PreXorPi { inner: NASAM { } }
+    },
 ];

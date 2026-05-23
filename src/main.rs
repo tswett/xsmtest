@@ -335,11 +335,40 @@ fn run_powers_test(_prng: PRNG, name: &str, mixer: &dyn Mixer, _samples: u64) {
     }
 }
 
+fn run_shift_test(mut prng: PRNG, name: &str, mixer: &dyn Mixer, samples: u64) {
+    println!("Running bit shift test on {name} with {samples} samples:");
+
+    let mut histogram: [u64; 64] = [0; 64];
+
+    for _ in 0..samples {
+        let input = prng.get_number() & !(1 << 63);
+
+        let difference = (mixer.mix(input) << 1) ^ (mixer.mix(input << 1) & !1);
+
+        let distance = difference.count_ones();
+
+        histogram[distance as usize] += 1;
+    }
+
+    let segment_size = histogram.iter().max().unwrap() / 60;
+
+    for bucket in 0..64 {
+        print!("{:>2}: ", bucket);
+
+        let bar_size = (histogram[bucket] + segment_size - 1) / segment_size;
+
+        for _ in 0..bar_size { print!("\u{2588}"); };
+
+        println!(" ({})", histogram[bucket]);
+    }
+}
+
 #[derive(Clone, ValueEnum)]
 enum TestType {
     Avalanche,
     Mutation,
     Powers,
+    Shift,
 }
 
 #[derive(Parser)]
@@ -363,6 +392,7 @@ fn main() {
         TestType::Avalanche => run_avalanche_test,
         TestType::Mutation => run_mutation_test,
         TestType::Powers => run_powers_test,
+        TestType::Shift => run_shift_test,
     };
 
     if args.mixer == "all" {
