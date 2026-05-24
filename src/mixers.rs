@@ -334,10 +334,34 @@ impl<'a> Mutation<'a> for MultiplyInvMut<'a> {
         MultiplyInvMut { inner, operand }
     }
 
-    const RANGE: Range<u32> = 1..32;
+    const RANGE: Range<u32> = 1..63;
 
     const CODE_START: &'static str = "x = x.wrapping_mul(mulinv(1 + (1 << ";
     const CODE_END: &'static str = ")))";
+}
+
+pub struct NegateMut<'a> {
+    inner: &'a dyn Mixer,
+}
+
+impl Mixer for NegateMut<'_> {
+    fn mix(&self, mut x: u64) -> u64 {
+        x = self.inner.mix(x);
+        x = x.wrapping_mul(-1i64 as u64);
+
+        x
+    }
+}
+
+impl<'a> Mutation<'a> for NegateMut<'a> {
+    fn new(inner: &'a dyn Mixer, _operand: u32) -> NegateMut<'a> {
+        NegateMut { inner }
+    }
+
+    const RANGE: Range<u32> = 1..2;
+
+    const CODE_START: &'static str = "x = x.wrapping_mul(-";
+    const CODE_END: &'static str = "i64 as u64)";
 }
 
 pub struct MixerInfo<'a> {
