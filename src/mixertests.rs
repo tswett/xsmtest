@@ -22,8 +22,9 @@ use clap::ValueEnum;
 use rayon::iter::{ParallelBridge, ParallelIterator};
 use std::ops::{Add, AddAssign};
 
+use crate::mixers;
 use crate::mixers::{
-    Mixer, MultiplyInvMut, MultiplyMut, Mutation, NegateMut, XorshiftRightMut
+    Mixer, MultiplyInvMut, MultiplyMut, NegateMut, XorshiftRightMut
 };
 use crate::prng::PRNG;
 
@@ -99,26 +100,21 @@ fn print_hamming_dist_stats(stats: SampleStats) {
         "Standard deviation   : {:9.6} (Z = {:6.2})", stats.sample_stddev, stats.stddev_z);
 }
 
-fn avalanche_test_inner(mut prng: PRNG, mixer: &dyn Mixer, samples: u64) -> RawStats
-{
-    let mut stats = RawStats::default();
+pub struct MixerTestContext<'a> {
+    pub prng: PRNG,
+    pub name: &'a str,
+    pub mixer: &'a dyn Mixer,
+    pub samples: u64,
+}
 
-    for _ in 0..samples {
-        let input1: u64 = prng.get_number();
-
-        let output1 = mixer.mix(input1);
-
-        for bit in 0..64 {
-            let input2 = input1 ^ (1u64 << bit);
-            let output2 = mixer.mix(input2);
-
-            let distance = (output1 ^ output2).count_ones() as i64;
-
-            stats.tally(distance);
-        }
+impl<'a> MixerTestContext<'a> {
+    fn split(&mut self) -> Self {
+        MixerTestContext { prng: self.prng.get_prng(), ..*self }
     }
+}
 
-    stats
+pub trait MixerTest {
+    fn run_test(&self, ctx: MixerTestContext);
 }
 
 const BATCH_SIZE: u64 = 4096;
@@ -152,37 +148,71 @@ impl Iterator for BatchMaker {
     }
 }
 
-fn avalanche_test(prng: PRNG, mixer: &dyn Mixer, samples: u64) -> SampleStats
-{
-    let stats: RawStats = BatchMaker { prng, samples }
-        .par_bridge()
-        .map(|batch_info|
-            avalanche_test_inner(batch_info.prng, mixer, batch_info.samples))
-        .reduce(RawStats::default, |a, b| a + b);
+pub struct Avalanche;
 
-    let expected_mean: f64 = 32.0;
-    let expected_stddev: f64 = 4.0;
+impl Avalanche {
+    fn test_inner(mut prng: PRNG, mixer: &dyn Mixer, samples: u64) -> RawStats
+    {
+        let mut stats = RawStats::default();
 
-    stats.sample_stats(expected_mean, expected_stddev)
+        for _ in 0..samples {
+            let input1: u64 = prng.get_number();
+
+            let output1 = mixer.mix(input1);
+
+            for bit in 0..64 {
+                let input2 = input1 ^ (1u64 << bit);
+                let output2 = mixer.mix(input2);
+
+                let distance = (output1 ^ output2).count_ones() as i64;
+
+                stats.tally(distance);
+            }
+        }
+
+        stats
+    }
+
+    fn avalanche_test(ctx: MixerTestContext) -> SampleStats
+    {
+        let stats: RawStats = BatchMaker { prng: ctx.prng, samples: ctx.samples }
+            .par_bridge()
+            .map(|batch_info|
+                Self::test_inner(batch_info.prng, ctx.mixer, batch_info.samples))
+            .reduce(RawStats::default, |a, b| a + b);
+
+        let expected_mean: f64 = 32.0;
+        let expected_stddev: f64 = 4.0;
+
+        stats.sample_stats(expected_mean, expected_stddev)
+    }
+
+    fn run_test_results(&self, ctx: MixerTestContext)
+        -> SampleStats
+    {
+        println!("Testing {} with {} samples:", ctx.name, ctx.samples);
+
+        let stats = Self::avalanche_test(ctx);
+
+        print_hamming_dist_stats(stats);
+        println!();
+
+        stats
+    }
 }
 
-fn run_avalanche_test_results(prng: PRNG, name: &str, mixer: &dyn Mixer, samples: u64)
-    -> SampleStats
-{
-    println!("Testing {name} with {samples} samples:");
-
-    let stats = avalanche_test(prng, mixer, samples);
-
-    print_hamming_dist_stats(stats);
-    println!();
-
-    stats
+impl MixerTest for Avalanche {
+    fn run_test(&self, ctx: MixerTestContext) {
+        self.run_test_results(ctx);
+    }
 }
 
-pub fn run_avalanche_test(prng: PRNG, name: &str, mixer: &dyn Mixer, samples: u64)
-    -> ()
-{
-    run_avalanche_test_results(prng, name, mixer, samples);
+pub struct Mutation;
+
+impl MixerTest for Mutation {
+    fn run_test(&self, ctx: MixerTestContext) {
+        run_mutation_test(ctx)
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -193,8 +223,7 @@ struct MutationInfo {
     badness: f64,
 }
 
-fn run_mutation_test_on<'a, M: Mutation<'a>>
-    (mut prng: PRNG, name: &str, mixer: &'a dyn Mixer, samples: u64)
+fn run_mutation_test_on<'a, M: mixers::Mutation<'a>>(mut ctx: MixerTestContext<'a>)
     -> (MutationInfo, MutationInfo)
 {
     let mut best = MutationInfo {
@@ -211,12 +240,19 @@ fn run_mutation_test_on<'a, M: Mutation<'a>>
     };
 
     for operand in M::RANGE {
-        let mutated = M::new(mixer, operand);
+        let mutated = M::new(ctx.mixer, operand);
 
-        let stats = avalanche_test(prng.get_prng(), &mutated, samples);
+        let mutated_ctx = MixerTestContext {
+            prng: ctx.prng.get_prng(),
+            name: "",
+            mixer: &mutated,
+            samples: ctx.samples
+        };
+
+        let stats = Avalanche::avalanche_test(mutated_ctx);
         let badness = stats.mean_z.abs().max(stats.stddev_z.abs());
 
-        println!("{}; {}{}{}:", name, M::CODE_START, operand, M::CODE_END);
+        println!("{}; {}{}{}:", ctx.name, M::CODE_START, operand, M::CODE_END);
         print_hamming_dist_stats(stats);
         println!();
 
@@ -234,9 +270,9 @@ fn run_mutation_test_on<'a, M: Mutation<'a>>
     (best, worst)
 }
 
-pub fn run_mutation_test(mut prng: PRNG, name: &str, mixer: &dyn Mixer, samples: u64)
+pub fn run_mutation_test(mut ctx: MixerTestContext)
 {
-    let base_stats = run_avalanche_test_results(prng.get_prng(), name, mixer, samples);
+    let base_stats = Avalanche { }.run_test_results(ctx.split());
     let base_badness = base_stats.mean_z.abs().max(base_stats.stddev_z.abs());
 
     let mut best = MutationInfo {
@@ -253,25 +289,25 @@ pub fn run_mutation_test(mut prng: PRNG, name: &str, mixer: &dyn Mixer, samples:
     };
 
     let (best_xorshift_right, worst_xorshift_right) =
-        run_mutation_test_on::<XorshiftRightMut>(prng.get_prng(), name, mixer, samples);
+        run_mutation_test_on::<XorshiftRightMut>(ctx.split());
 
     if best_xorshift_right.badness < best.badness { best = best_xorshift_right }
     if worst_xorshift_right.badness > worst.badness { worst = worst_xorshift_right }
 
     let (best_multiply, worst_multiply) =
-        run_mutation_test_on::<MultiplyMut>(prng.get_prng(), name, mixer, samples);
+        run_mutation_test_on::<MultiplyMut>(ctx.split());
 
     if best_multiply.badness < best.badness { best = best_multiply }
     if worst_multiply.badness > worst.badness { worst = worst_multiply }
 
     let (best_multiply_inv, worst_multiply_inv) =
-        run_mutation_test_on::<MultiplyInvMut>(prng.get_prng(), name, mixer, samples);
+        run_mutation_test_on::<MultiplyInvMut>(ctx.split());
 
     if best_multiply_inv.badness < best.badness { best = best_multiply_inv }
     if worst_multiply_inv.badness > worst.badness { worst = worst_multiply_inv }
 
     let (negate, _) =
-        run_mutation_test_on::<NegateMut>(prng.get_prng(), name, mixer, samples);
+        run_mutation_test_on::<NegateMut>(ctx.split());
 
     if negate.badness < best.badness { best = negate }
     if negate.badness > worst.badness { worst = negate }
@@ -296,6 +332,14 @@ pub fn run_mutation_test(mut prng: PRNG, name: &str, mixer: &dyn Mixer, samples:
         worst.code_end,
         worst.badness);
     println!();
+}
+
+pub struct Powers;
+
+impl MixerTest for Powers {
+    fn run_test(&self, ctx: MixerTestContext) {
+        run_powers_test(ctx.prng, ctx.name, ctx.mixer, ctx.samples)
+    }
 }
 
 pub fn run_powers_test(_prng: PRNG, name: &str, mixer: &dyn Mixer, _samples: u64) {
@@ -337,6 +381,14 @@ pub fn run_powers_test(_prng: PRNG, name: &str, mixer: &dyn Mixer, _samples: u64
         }
 
         last_output = Some(output);
+    }
+}
+
+pub struct Shift;
+
+impl MixerTest for Shift {
+    fn run_test(&self, ctx: MixerTestContext) {
+        run_shift_test(ctx.prng, ctx.name, ctx.mixer, ctx.samples)
     }
 }
 

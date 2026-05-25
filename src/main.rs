@@ -25,8 +25,7 @@ mod prng;
 use clap::Parser;
 
 use crate::mixertests::{
-    run_avalanche_test, run_mutation_test, run_powers_test, run_shift_test,
-    TestType,
+    Avalanche, MixerTest, MixerTestContext, Mutation, Powers, Shift, TestType,
 };
 use crate::prng::PRNG;
 
@@ -47,20 +46,30 @@ fn main() {
 
     let args = Args::parse();
 
-    let run_test = match args.test {
-        TestType::Avalanche => run_avalanche_test,
-        TestType::Mutation => run_mutation_test,
-        TestType::Powers => run_powers_test,
-        TestType::Shift => run_shift_test,
+    let test: &dyn MixerTest = match args.test {
+        TestType::Avalanche => &Avalanche,
+        TestType::Mutation => &Mutation,
+        TestType::Powers => &Powers,
+        TestType::Shift => &Shift,
     };
 
     if args.mixer == "all" {
         for m in mixers::MIXERS {
-            run_test(prng.get_prng(), m.name, m.func, args.samples);
+            test.run_test(MixerTestContext {
+                prng: prng.get_prng(),
+                name: m.name,
+                mixer: m.func,
+                samples: args.samples
+            })
         }
     } else {
         match mixers::MIXERS.iter().find(|m| m.name == args.mixer) {
-            Some(m) => run_test(prng, m.name, m.func, args.samples),
+            Some(m) => test.run_test(MixerTestContext {
+                prng: prng.get_prng(),
+                name: m.name,
+                mixer: m.func,
+                samples: args.samples
+            }),
             None => panic!("Unknown mixer: {}", args.mixer),
         }
     }
