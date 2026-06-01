@@ -92,8 +92,10 @@ struct SampleStats {
 
 pub struct MixerTestContext<'a> {
     pub prng: PRNG,
+
     pub name: &'a str,
     pub mixer: &'a dyn Mixer,
+
     pub samples: u64,
 }
 
@@ -196,85 +198,76 @@ pub struct Powers;
 
 impl MixerTest for Powers {
     fn run_test(&self, ctx: MixerTestContext) {
-        run_powers_test(ctx.prng, ctx.name, ctx.mixer, ctx.samples)
-    }
-}
+        println!("Calling {} with powers of 2:", ctx.name);
 
-pub fn run_powers_test(_prng: PRNG, name: &str, mixer: &dyn Mixer, _samples: u64) {
-    println!("Calling {} with powers of 2:", name);
+        let mut last_output: Option<u64> = None;
 
-    let mut last_output: Option<u64> = None;
+        for i in 0..64 {
+            let output = ctx.mixer.mix(1 << i);
 
-    for i in 0..64 {
-        let output = mixer.mix(1 << i);
+            let distance = last_output.map(|last_output| {
+                let last_output_masked = last_output & !(1 << 63);
+                let output_shifted = output >> 1;
+                (last_output_masked ^ output_shifted).count_ones()
+            });
 
-        let distance = last_output.map(|last_output| {
-            let last_output_masked = last_output & !(1 << 63);
-            let output_shifted = output >> 1;
-            (last_output_masked ^ output_shifted).count_ones()
-        });
+            print!("{:>2}  ", i);
 
-        print!("{:>2}  ", i);
+            for b in (0..64).rev() {
+                let color_code = if output & (1 << b) != 0 {
+                    "\x1b[7m:"
+                } else {
+                    "\x1b[0m."
+                };
 
-        for b in (0..64).rev() {
-            let color_code = if output & (1 << b) != 0 {
-                "\x1b[7m:"
+                print!("{}", color_code);
+            }
+
+            print!("\x1b[0m");
+
+            print!("  ");
+            if let Some(distance) = distance {
+                println!("{:>2}", distance)
             } else {
-                "\x1b[0m."
-            };
+                println!()
+            }
 
-            print!("{}", color_code);
+            last_output = Some(output);
         }
-
-        print!("\x1b[0m");
-
-        print!("  ");
-        print!("{}", if output % 2 == 1 { 'X' } else { ' ' });
-
-        print!("  ");
-        if let Some(distance) = distance {
-            println!("{:>2}", distance)
-        } else {
-            println!()
-        }
-
-        last_output = Some(output);
     }
 }
 
 pub struct Shift;
 
 impl MixerTest for Shift {
-    fn run_test(&self, ctx: MixerTestContext) {
-        run_shift_test(ctx.prng, ctx.name, ctx.mixer, ctx.samples)
-    }
-}
+    fn run_test(&self, mut ctx: MixerTestContext) {
+        println!("Running bit shift test on {} with {} samples:",
+            ctx.name, ctx.samples);
 
-pub fn run_shift_test(mut prng: PRNG, name: &str, mixer: &dyn Mixer, samples: u64) {
-    println!("Running bit shift test on {name} with {samples} samples:");
+        let mut histogram: [u64; 64] = [0; 64];
 
-    let mut histogram: [u64; 64] = [0; 64];
+        for _ in 0..ctx.samples {
+            let input = ctx.prng.get_number() & !(1 << 63);
 
-    for _ in 0..samples {
-        let input = prng.get_number() & !(1 << 63);
+            let difference =
+                (ctx.mixer.mix(input) << 1) ^ (ctx.mixer.mix(input << 1) & !1);
 
-        let difference = (mixer.mix(input) << 1) ^ (mixer.mix(input << 1) & !1);
+            let distance = difference.count_ones();
 
-        let distance = difference.count_ones();
+            histogram[distance as usize] += 1;
+        }
 
-        histogram[distance as usize] += 1;
-    }
+        let segment_size = histogram.iter().max().unwrap() / 60;
 
-    let segment_size = histogram.iter().max().unwrap() / 60;
+        for bucket in 0..64 {
+            print!("{:>2}: ", bucket);
 
-    for bucket in 0..64 {
-        print!("{:>2}: ", bucket);
+            let bar_size = (histogram[bucket] + segment_size - 1) / segment_size;
 
-        let bar_size = (histogram[bucket] + segment_size - 1) / segment_size;
+            for _ in 0..bar_size { print!("\u{2588}"); };
 
-        for _ in 0..bar_size { print!("\u{2588}"); };
-
-        println!(" ({})", histogram[bucket]);
+            println!(" ({})", histogram[bucket]);
+        }
     }
 }
 
