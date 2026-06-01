@@ -18,8 +18,6 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-use std::ops::Range;
-
 // Multiplicative inverse
 fn mulinv(x: u64) -> u64 {
     let mut inv = x;
@@ -254,114 +252,6 @@ impl<M: Mixer> Mixer for PreXorPi<M> {
     fn mix(&self, x: u64) -> u64 {
         self.inner.mix(x ^ PI64)
     }
-}
-
-pub trait Mutation<'a>: Mixer {
-    fn new(inner: &'a dyn Mixer, operand: u32) -> Self;
-
-    const RANGE: Range<u32>;
-
-    const CODE_START: &'static str;
-    const CODE_END: &'static str;
-}
-
-pub struct XorshiftRightMut<'a> {
-    inner: &'a dyn Mixer,
-    operand: u32,
-}
-
-impl Mixer for XorshiftRightMut<'_> {
-    fn mix(&self, mut x: u64) -> u64 {
-        x = self.inner.mix(x);
-        x ^= x >> self.operand;
-
-        x
-    }
-}
-
-impl<'a> Mutation<'a> for XorshiftRightMut<'a> {
-    fn new(inner: &'a dyn Mixer, operand: u32) -> XorshiftRightMut<'a> {
-        XorshiftRightMut { inner, operand }
-    }
-
-    const RANGE: Range<u32> = 1..64;
-
-    const CODE_START: &'static str = "x ^= x >> ";
-    const CODE_END: &'static str = "";
-}
-
-pub struct MultiplyMut<'a> {
-    inner: &'a dyn Mixer,
-    operand: u32,
-}
-
-impl Mixer for MultiplyMut<'_> {
-    fn mix(&self, mut x: u64) -> u64 {
-        x = self.inner.mix(x);
-        x = x.wrapping_mul(1 + (1 << self.operand));
-
-        x
-    }
-}
-
-impl<'a> Mutation<'a> for MultiplyMut<'a> {
-    fn new(inner: &'a dyn Mixer, operand: u32) -> MultiplyMut<'a> {
-        MultiplyMut { inner, operand }
-    }
-
-    const RANGE: Range<u32> = 1..64;
-
-    const CODE_START: &'static str = "x = x.wrapping_mul(1 + (1 << ";
-    const CODE_END: &'static str = "))";
-}
-
-pub struct MultiplyInvMut<'a> {
-    inner: &'a dyn Mixer,
-    operand: u32,
-}
-
-impl Mixer for MultiplyInvMut<'_> {
-    fn mix(&self, mut x: u64) -> u64 {
-        x = self.inner.mix(x);
-        x = x.wrapping_mul(mulinv(1 + (1 << self.operand)));
-
-        x
-    }
-}
-
-impl<'a> Mutation<'a> for MultiplyInvMut<'a> {
-    fn new(inner: &'a dyn Mixer, operand: u32) -> MultiplyInvMut<'a> {
-        MultiplyInvMut { inner, operand }
-    }
-
-    const RANGE: Range<u32> = 1..63;
-
-    const CODE_START: &'static str = "x = x.wrapping_mul(mulinv(1 + (1 << ";
-    const CODE_END: &'static str = ")))";
-}
-
-pub struct NegateMut<'a> {
-    inner: &'a dyn Mixer,
-}
-
-impl Mixer for NegateMut<'_> {
-    fn mix(&self, mut x: u64) -> u64 {
-        x = self.inner.mix(x);
-        x = x.wrapping_mul(-1i64 as u64);
-
-        x
-    }
-}
-
-impl<'a> Mutation<'a> for NegateMut<'a> {
-    fn new(inner: &'a dyn Mixer, _operand: u32) -> NegateMut<'a> {
-        NegateMut { inner }
-    }
-
-    const RANGE: Range<u32> = 1..2;
-
-    const CODE_START: &'static str = "x = x.wrapping_mul(-";
-    const CODE_END: &'static str = "i64 as u64)";
 }
 
 pub struct MixerInfo<'a> {

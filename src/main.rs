@@ -25,7 +25,7 @@ mod prng;
 use clap::Parser;
 
 use crate::mixertests::{
-    Avalanche, MixerTest, MixerTestContext, Mutation, Powers, Shift, TestType,
+    Avalanche, MixerTest, MixerTestContext, Powers, Shift, TestType,
 };
 use crate::prng::PRNG;
 
@@ -48,7 +48,6 @@ fn main() {
 
     let test: &dyn MixerTest = match args.test {
         TestType::Avalanche => &Avalanche,
-        TestType::Mutation => &Mutation,
         TestType::Powers => &Powers,
         TestType::Shift => &Shift,
     };

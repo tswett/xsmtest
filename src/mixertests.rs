@@ -22,10 +22,7 @@ use clap::ValueEnum;
 use rayon::iter::{ParallelBridge, ParallelIterator};
 use std::ops::{Add, AddAssign};
 
-use crate::mixers;
-use crate::mixers::{
-    Mixer, MultiplyInvMut, MultiplyMut, NegateMut, XorshiftRightMut
-};
+use crate::mixers::Mixer;
 use crate::prng::PRNG;
 
 #[derive(Clone, Copy, Default)]
@@ -91,13 +88,6 @@ struct SampleStats {
     sample_stddev: f64,
     mean_z: f64,
     stddev_z: f64
-}
-
-fn print_hamming_dist_stats(stats: SampleStats) {
-    println!(
-        "Mean Hamming distance: {:9.6} (Z = {:6.2})", stats.sample_mean, stats.mean_z);
-    println!(
-        "Standard deviation   : {:9.6} (Z = {:6.2})", stats.sample_stddev, stats.stddev_z);
 }
 
 pub struct MixerTestContext<'a> {
@@ -186,152 +176,20 @@ impl Avalanche {
 
         stats.sample_stats(expected_mean, expected_stddev)
     }
-
-    fn run_test_results(&self, ctx: MixerTestContext)
-        -> SampleStats
-    {
-        println!("Testing {} with {} samples:", ctx.name, ctx.samples);
-
-        let stats = Self::avalanche_test(ctx);
-
-        print_hamming_dist_stats(stats);
-        println!();
-
-        stats
-    }
 }
 
 impl MixerTest for Avalanche {
     fn run_test(&self, ctx: MixerTestContext) {
-        self.run_test_results(ctx);
-    }
-}
+        println!("Testing {} with {} samples:", ctx.name, ctx.samples);
 
-pub struct Mutation;
+        let stats = Self::avalanche_test(ctx);
 
-impl MixerTest for Mutation {
-    fn run_test(&self, ctx: MixerTestContext) {
-        run_mutation_test(ctx)
-    }
-}
-
-#[derive(Clone, Copy)]
-struct MutationInfo {
-    code_start: &'static str,
-    operand: u32,
-    code_end: &'static str,
-    badness: f64,
-}
-
-fn run_mutation_test_on<'a, M: mixers::Mutation<'a>>(mut ctx: MixerTestContext<'a>)
-    -> (MutationInfo, MutationInfo)
-{
-    let mut best = MutationInfo {
-        code_start: "",
-        operand: 0,
-        code_end: "",
-        badness: f64::MAX,
-    };
-    let mut worst = MutationInfo {
-        code_start: "",
-        operand: 0,
-        code_end: "",
-        badness: -1.0,
-    };
-
-    for operand in M::RANGE {
-        let mutated = M::new(ctx.mixer, operand);
-
-        let mutated_ctx = MixerTestContext {
-            prng: ctx.prng.get_prng(),
-            name: "",
-            mixer: &mutated,
-            samples: ctx.samples
-        };
-
-        let stats = Avalanche::avalanche_test(mutated_ctx);
-        let badness = stats.mean_z.abs().max(stats.stddev_z.abs());
-
-        println!("{}; {}{}{}:", ctx.name, M::CODE_START, operand, M::CODE_END);
-        print_hamming_dist_stats(stats);
+        println!("Mean Hamming distance: {:9.6} (Z = {:6.2})",
+            stats.sample_mean, stats.mean_z);
+        println!("Standard deviation   : {:9.6} (Z = {:6.2})",
+            stats.sample_stddev, stats.stddev_z);
         println!();
-
-        let mutation_info = MutationInfo {
-            code_start: M::CODE_START,
-            operand,
-            code_end: M::CODE_END,
-            badness,
-        };
-
-        if badness < best.badness { best = mutation_info }
-        if badness > worst.badness { worst = mutation_info }
     }
-
-    (best, worst)
-}
-
-pub fn run_mutation_test(mut ctx: MixerTestContext)
-{
-    let base_stats = Avalanche { }.run_test_results(ctx.split());
-    let base_badness = base_stats.mean_z.abs().max(base_stats.stddev_z.abs());
-
-    let mut best = MutationInfo {
-        code_start: "",
-        operand: 0,
-        code_end: "",
-        badness: f64::MAX,
-    };
-    let mut worst = MutationInfo {
-        code_start: "",
-        operand: 0,
-        code_end: "",
-        badness: -1.0,
-    };
-
-    let (best_xorshift_right, worst_xorshift_right) =
-        run_mutation_test_on::<XorshiftRightMut>(ctx.split());
-
-    if best_xorshift_right.badness < best.badness { best = best_xorshift_right }
-    if worst_xorshift_right.badness > worst.badness { worst = worst_xorshift_right }
-
-    let (best_multiply, worst_multiply) =
-        run_mutation_test_on::<MultiplyMut>(ctx.split());
-
-    if best_multiply.badness < best.badness { best = best_multiply }
-    if worst_multiply.badness > worst.badness { worst = worst_multiply }
-
-    let (best_multiply_inv, worst_multiply_inv) =
-        run_mutation_test_on::<MultiplyInvMut>(ctx.split());
-
-    if best_multiply_inv.badness < best.badness { best = best_multiply_inv }
-    if worst_multiply_inv.badness > worst.badness { worst = worst_multiply_inv }
-
-    let (negate, _) =
-        run_mutation_test_on::<NegateMut>(ctx.split());
-
-    if negate.badness < best.badness { best = negate }
-    if negate.badness > worst.badness { worst = negate }
-
-    println!("Baseline: {:.2}", base_badness);
-    println!(
-        "Best multiply: {}{}{} ({:.2})",
-        best_multiply.code_start,
-        best_multiply.operand,
-        best_multiply.code_end,
-        best_multiply.badness);
-    println!(
-        "Best: {}{}{} ({:.2})",
-        best.code_start,
-        best.operand,
-        best.code_end,
-        best.badness);
-    println!(
-        "Worst: {}{}{} ({:.2})",
-        worst.code_start,
-        worst.operand,
-        worst.code_end,
-        worst.badness);
-    println!();
 }
 
 pub struct Powers;
@@ -423,7 +281,6 @@ pub fn run_shift_test(mut prng: PRNG, name: &str, mixer: &dyn Mixer, samples: u6
 #[derive(Clone, ValueEnum)]
 pub enum TestType {
     Avalanche,
-    Mutation,
     Powers,
     Shift,
 }
