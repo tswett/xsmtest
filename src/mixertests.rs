@@ -143,8 +143,7 @@ impl Iterator for BatchMaker {
 pub struct Avalanche;
 
 impl Avalanche {
-    fn test_inner(mut prng: PRNG, mixer: &dyn Mixer, samples: u64) -> RawStats
-    {
+    fn test_inner(mut prng: PRNG, mixer: &dyn Mixer, samples: u64) -> RawStats {
         let mut stats = RawStats::default();
 
         for _ in 0..samples {
@@ -165,8 +164,7 @@ impl Avalanche {
         stats
     }
 
-    fn avalanche_test(ctx: MixerTestContext) -> SampleStats
-    {
+    fn avalanche_test(ctx: MixerTestContext) -> SampleStats {
         let stats: RawStats = BatchMaker { prng: ctx.prng, samples: ctx.samples }
             .par_bridge()
             .map(|batch_info|
@@ -190,6 +188,152 @@ impl MixerTest for Avalanche {
             stats.sample_mean, stats.mean_z);
         println!("Standard deviation   : {:9.6} (Z = {:6.2})",
             stats.sample_stddev, stats.stddev_z);
+        println!();
+    }
+}
+
+struct SARawStats {
+    input_count: Box<[u64; 64]>,
+    flip_count: Box<[[u64; 64]; 64]>,
+}
+
+impl SARawStats {
+    fn tally(&mut self, bit: usize, difference: u64) {
+        self.input_count[bit] += 1;
+
+        for i in 0..64 {
+            if difference & (1 << i) != 0 {
+                self.flip_count[bit][i] += 1;
+            }
+        }
+    }
+
+    fn calculate(&self) -> SACalcStats {
+        let mut n: f64 = 0.0;
+        let mut sum_p: f64 = 0.0;
+        let mut sum_p_sq: f64 = 0.0;
+        let mut min_p = f64::MAX;
+        let mut max_p = f64::MIN;
+
+        for bit in 0..64 {
+            if self.input_count[bit] == 0 {
+                continue;
+            }
+
+            for i in 0..64 {
+                let p =
+                    (self.flip_count[bit][i] as f64) /
+                    (self.input_count[bit] as f64);
+
+                n += 1.0;
+                sum_p += p;
+                sum_p_sq += p*p;
+                if p < min_p { min_p = p }
+                if p > max_p { max_p = p }
+            }
+        }
+
+        let mean_p = sum_p / n;
+        let stddev_p = (sum_p_sq / n - mean_p * mean_p).sqrt();
+
+        SACalcStats {
+            min_p,
+            min_p_z: 0.0,
+            max_p,
+            max_p_z: 0.0,
+            mean_p,
+            mean_p_z: 0.0,
+            stddev_p,
+            stddev_p_z: 0.0,
+        }
+    }
+}
+
+impl Default for SARawStats {
+    fn default() -> Self {
+        SARawStats {
+            input_count: Box::new([0; 64]),
+            flip_count: Box::new([[0; 64]; 64]),
+        }
+    }
+}
+
+impl Add for SARawStats {
+    type Output = SARawStats;
+
+    fn add(self, rhs: SARawStats) -> SARawStats {
+        let mut total: SARawStats = self;
+
+        for i in 0..64 {
+            total.input_count[i] += rhs.input_count[i];
+
+            for j in 0..64 {
+                total.flip_count[i][j] += rhs.flip_count[i][j];
+            }
+        }
+
+        total
+    }
+}
+
+struct SACalcStats {
+    min_p: f64,
+    min_p_z: f64,
+    max_p: f64,
+    max_p_z: f64,
+    mean_p: f64,
+    mean_p_z: f64,
+    stddev_p: f64,
+    stddev_p_z: f64,
+}
+
+pub struct StrictAvalanche;
+
+impl StrictAvalanche {
+    fn test_inner(mut prng: PRNG, mixer: &dyn Mixer, samples: u64)
+        -> SARawStats
+    {
+        let mut stats = SARawStats::default();
+
+        for _ in 0..samples {
+            let input1: u64 = prng.get_number();
+
+            let output1 = mixer.mix(input1);
+
+            for bit in 0..64 {
+                let input2 = input1 ^ (1u64 << bit);
+                let output2 = mixer.mix(input2);
+
+                stats.tally(bit, output1 ^ output2);
+            }
+        }
+
+        stats
+    }
+}
+
+impl MixerTest for StrictAvalanche {
+    fn run_test(&self, ctx: MixerTestContext) {
+        println!("Testing {} with {} samples:", ctx.name, ctx.samples);
+
+        let stats: SARawStats = BatchMaker { prng: ctx.prng, samples: ctx.samples }
+            .par_bridge()
+            .map(|batch_info|
+                Self::test_inner(batch_info.prng, ctx.mixer, batch_info.samples))
+            .reduce(SARawStats::default, |a, b| a + b);
+
+        let calc_stats = stats.calculate();
+
+        // TODO: calculate the Z-scores correctly
+        println!("Lowest probability : {:9.6} (Z = ?)", calc_stats.min_p);
+        println!("Highest probability: {:9.6} (Z = ?)", calc_stats.max_p);
+        println!("Mean probability   : {:9.6} (Z = ?)", calc_stats.mean_p);
+        println!("Std dev probability: {:9.6} (Z = ?)", calc_stats.stddev_p);
+
+        // TODO: show a histogram of the Z-scores
+
+        // TODO: show a heatmap of the Z-scores
+
         println!();
     }
 }
@@ -257,7 +401,7 @@ impl MixerTest for Shift {
             histogram[distance as usize] += 1;
         }
 
-        let segment_size = histogram.iter().max().unwrap() / 60;
+        let segment_size = (histogram.iter().max().unwrap() / 60).max(1);
 
         for bucket in 0..64 {
             print!("{:>2}: ", bucket);
@@ -276,4 +420,5 @@ pub enum TestType {
     Avalanche,
     Powers,
     Shift,
+    StrictAvalanche,
 }

@@ -25,7 +25,8 @@ mod prng;
 use clap::Parser;
 
 use crate::mixertests::{
-    Avalanche, MixerTest, MixerTestContext, Powers, Shift, TestType,
+    Avalanche, MixerTest, MixerTestContext,
+    Powers, Shift, StrictAvalanche, TestType,
 };
 use crate::prng::PRNG;
 
@@ -50,6 +51,7 @@ fn main() {
         TestType::Avalanche => &Avalanche,
         TestType::Powers => &Powers,
         TestType::Shift => &Shift,
+        TestType::StrictAvalanche => &StrictAvalanche,
     };
 
     if args.mixer == "all" {
