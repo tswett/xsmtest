@@ -100,7 +100,7 @@ struct LousyPi;
 impl Mixer for LousyPi {
     fn mix(&self, mut x: u64) -> u64 {
         x = x.wrapping_mul(PI64);
-        x = x.rotate_right(32);
+        x ^= x >> 32;
 
         x = x.wrapping_mul(PI64);
 
@@ -261,9 +261,17 @@ pub struct MixerInfo<'a> {
 
 pub const MIXERS: &[MixerInfo] = &[
     MixerInfo { name: "trivial", func: &Trivial { } },
+    // MixerInfo {
+    //     name: "xorpi",
+    //     func: &PreXorPi { inner: Trivial { } }
+    // },
     MixerInfo { name: "fake_ava", func: &FakeAva { } },
     MixerInfo { name: "deluxe_fake_ava", func: &DeluxeFakeAva { } },
     MixerInfo { name: "terrible_pi", func: &TerriblePi { } },
+    // MixerInfo {
+    //     name: "prexorpi:terrible_pi",
+    //     func: &PreXorPi { inner: TerriblePi { } }
+    // },
     MixerInfo { name: "lousy_pi", func: &LousyPi { } },
     MixerInfo { name: "xorshuffle:4", func: &XorShuffle { rounds: 4 } },
     MixerInfo { name: "xorshuffle:5", func: &XorShuffle { rounds: 5 } },

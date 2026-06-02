@@ -238,13 +238,9 @@ impl SARawStats {
 
         SACalcStats {
             min_p,
-            min_p_z: 0.0,
             max_p,
-            max_p_z: 0.0,
             mean_p,
-            mean_p_z: 0.0,
             stddev_p,
-            stddev_p_z: 0.0,
         }
     }
 }
@@ -278,13 +274,9 @@ impl Add for SARawStats {
 
 struct SACalcStats {
     min_p: f64,
-    min_p_z: f64,
     max_p: f64,
-    max_p_z: f64,
     mean_p: f64,
-    mean_p_z: f64,
     stddev_p: f64,
-    stddev_p_z: f64,
 }
 
 pub struct StrictAvalanche;
@@ -415,10 +407,78 @@ impl MixerTest for Shift {
     }
 }
 
+pub struct Z3;
+
+impl MixerTest for Z3 {
+    fn run_test(&self, ctx: MixerTestContext) {
+        let samples = ctx.samples.min(64);
+
+        println!("Using Z3 to solve {} with {} samples...", ctx.name, samples);
+        println!();
+
+        let solver = z3::Solver::new();
+
+        let p_s1 = z3::ast::BV::new_const("S1", 64);
+        solver.assert(p_s1.bvuge(1));
+        solver.assert(p_s1.bvule(64));
+        let p_m1 = z3::ast::BV::new_const("M1", 64);
+        let p_s2 = z3::ast::BV::new_const("S2", 64);
+        solver.assert(p_s2.bvuge(1));
+        solver.assert(p_s2.bvule(64));
+        let p_m2 = z3::ast::BV::new_const("M2", 64);
+        let p_s3 = z3::ast::BV::new_const("S3", 64);
+        solver.assert(p_s3.bvuge(1));
+        solver.assert(p_s3.bvule(64));
+
+        for i in 0..samples {
+            let mut x = z3::ast::BV::from_u64(1 << i, 64);
+
+            x = x.bvxor(x.bvlshr(&p_s1));
+
+            x = x.bvmul(&p_m1);
+            x = x.bvxor(x.bvlshr(&p_s2));
+
+            x = x.bvmul(&p_m2);
+            x = x.bvxor(x.bvlshr(&p_s3));
+
+            solver.assert(x.eq(z3::ast::BV::from_u64(ctx.mixer.mix(1 << i), 64)));
+        }
+
+        let status = solver.check();
+
+        match status {
+            z3::SatResult::Sat => {
+                let model = solver.get_model().unwrap();
+
+                let v_s1 = model.eval(&p_s1, true).unwrap().as_u64().unwrap();
+                let v_m1 = model.eval(&p_m1, true).unwrap().as_u64().unwrap();
+                let v_s2 = model.eval(&p_s2, true).unwrap().as_u64().unwrap();
+                let v_m2 = model.eval(&p_m2, true).unwrap().as_u64().unwrap();
+                let v_s3 = model.eval(&p_s3, true).unwrap().as_u64().unwrap();
+
+                println!("Found a solution:");
+                println!();
+                println!("x ^= x >> {};", v_s1);
+                println!("x *= 0x{:016x};", v_m1);
+                println!("x ^= x >> {};", v_s2);
+                println!("x *= 0x{:016x};", v_m2);
+                println!("x ^= x >> {};", v_s3);
+            }
+            z3::SatResult::Unsat =>
+                println!("Search complete. There are no solutions."),
+            z3::SatResult::Unknown =>
+                println!("Search interrupted."),
+        }
+
+        println!();
+    }
+}
+
 #[derive(Clone, ValueEnum)]
 pub enum TestType {
     Avalanche,
     Powers,
     Shift,
     StrictAvalanche,
+    Z3,
 }
