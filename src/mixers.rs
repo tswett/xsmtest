@@ -18,9 +18,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-use crate::oplistmixer::{
-    CompiledMixer, MixerOp, MultiplyOp, OpListMixer, XorshiftRightOp
-};
+use crate::oplistmixer::{CompiledMixer, OpListBuilder, OpListMixer};
 
 // Multiplicative inverse
 #[allow(dead_code)]
@@ -174,17 +172,15 @@ impl Mixer for EasyNut {
 // https://github.com/aappleby/smhasher/blob/master/src/MurmurHash3.cpp
 struct MurmurHash3;
 impl OpListMixer for MurmurHash3 {
-    fn operations(&self) -> Vec<Box<dyn MixerOp>> {
+    fn build(&self, mut x: OpListBuilder) {
         const M1: u64 = 0xFF51AFD7ED558CCD;
         const M2: u64 = 0xC4CEB9FE1A85EC53;
 
-        vec!(
-            Box::new(XorshiftRightOp::new(33).unwrap()),
-            Box::new(MultiplyOp::new(M1).unwrap()),
-            Box::new(XorshiftRightOp::new(33).unwrap()),
-            Box::new(MultiplyOp::new(M2).unwrap()),
-            Box::new(XorshiftRightOp::new(33).unwrap()),
-        )
+        x ^= x >> 33;
+        x *= M1;
+        x ^= x >> 33;
+        x *= M2;
+        x ^= x >> 33;
     }
 }
 

@@ -26,7 +26,9 @@ use cranelift_codegen::Context;
 use cranelift_codegen::ir::types::I64;
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{FuncId, Linkage, Module};
+use std::cell::RefCell;
 use std::fmt::{Display, Formatter};
+use std::ops::{BitXorAssign, MulAssign, Shr};
 
 pub trait MixerOp {
     #[allow(dead_code)]
@@ -114,6 +116,39 @@ impl MixerOp for XorshiftRightOp {
     }
 }
 
+#[derive(Clone, Copy)]
+pub struct OpListBuilder<'a> {
+    op_list: &'a RefCell<Vec<Box<dyn MixerOp>>>,
+}
+
+pub struct ShiftRightFragment {
+    offset: u64
+}
+
+impl Shr<u64> for OpListBuilder<'_> {
+    type Output = ShiftRightFragment;
+
+    fn shr(self, offset: u64) -> Self::Output {
+        ShiftRightFragment { offset }
+    }
+}
+
+impl BitXorAssign<ShiftRightFragment> for OpListBuilder<'_> {
+    fn bitxor_assign(&mut self, fragment: ShiftRightFragment) {
+        self.op_list.borrow_mut().push(Box::new(
+            XorshiftRightOp::new(fragment.offset).unwrap()
+        ));
+    }
+}
+
+impl MulAssign<u64> for OpListBuilder<'_> {
+    fn mul_assign(&mut self, multiplier: u64) {
+        self.op_list.borrow_mut().push(Box::new(
+            MultiplyOp::new(multiplier).unwrap()
+        ));
+    }
+}
+
 pub struct CompiledMixer {
     function: extern "C" fn(u64) -> u64,
 }
@@ -125,7 +160,13 @@ impl CompiledMixer {
 }
 
 pub trait OpListMixer: Sync {
-    fn operations(&self) -> Vec<Box<dyn MixerOp>>;
+    fn build(&self, x: OpListBuilder);
+
+    fn operations(&self) -> Vec<Box<dyn MixerOp>> {
+        let op_list: RefCell<Vec<Box<dyn MixerOp>>> = RefCell::new(vec!());
+        self.build(OpListBuilder { op_list: &op_list });
+        op_list.take()
+    }
 
     fn compile(&self) -> CompiledMixer {
         let builder: JITBuilder =
