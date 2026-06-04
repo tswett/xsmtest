@@ -20,6 +20,7 @@
 
 mod mixers;
 mod mixertests;
+mod oplistmixer;
 mod prng;
 
 use clap::Parser;
@@ -60,7 +61,7 @@ fn main() {
             test.run_test(MixerTestContext {
                 prng: prng.get_prng(),
                 name: m.name,
-                mixer: m.func,
+                mixer: &*(m.func)(),
                 samples: args.samples
             })
         }
@@ -69,7 +70,7 @@ fn main() {
             Some(m) => test.run_test(MixerTestContext {
                 prng: prng.get_prng(),
                 name: m.name,
-                mixer: m.func,
+                mixer: &*(m.func)(),
                 samples: args.samples
             }),
             None => panic!("Unknown mixer: {}", args.mixer),

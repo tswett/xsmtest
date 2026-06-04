@@ -18,7 +18,9 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-use std::fmt::{Display, Formatter};
+use crate::oplistmixer::{
+    CompiledMixer, MixerOp, MultiplyOp, OpListMixer, XorshiftRightOp
+};
 
 // Multiplicative inverse
 #[allow(dead_code)]
@@ -32,91 +34,13 @@ fn mulinv(x: u64) -> u64 {
     inv
 }
 
-trait MixerOp {
-    fn eval(&self, x: u64) -> u64;
-}
-
-struct MultiplyOp {
-    multiplier: u64,
-}
-
-impl MultiplyOp {
-    fn new(multiplier: u64) -> Result<Self, MultiplyOpOperandError> {
-        if multiplier % 2 == 1 {
-            Ok(MultiplyOp { multiplier })
-        } else {
-            Err(MultiplyOpOperandError { multiplier })
-        }
-    }
-}
-
-#[derive(Debug)]
-struct MultiplyOpOperandError {
-    multiplier: u64,
-}
-
-impl Display for MultiplyOpOperandError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
-        write!(f,
-            "invalid multiplier: expected odd number but {:016x} is even",
-            self.multiplier)
-    }
-}
-
-impl MixerOp for MultiplyOp {
-    fn eval(&self, x: u64) -> u64 {
-        x.wrapping_mul(self.multiplier)
-    }
-}
-
-struct XorshiftRightOp {
-    offset: u64,
-}
-
-impl XorshiftRightOp {
-    fn new(offset: u64) -> Result<Self, XorshiftRightOpOperandError> {
-        if offset >= 1 && offset <= 64 {
-            Ok(XorshiftRightOp { offset })
-        } else {
-            Err(XorshiftRightOpOperandError { offset })
-        }
-    }
-}
-
-#[derive(Debug)]
-struct XorshiftRightOpOperandError {
-    offset: u64,
-}
-
-impl Display for XorshiftRightOpOperandError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
-        write!(f,
-            "invalid offset: expected number in range 1 to 64 but {} is even",
-            self.offset)
-    }
-}
-
-impl MixerOp for XorshiftRightOp {
-    fn eval(&self, x: u64) -> u64 {
-        x ^ (x >> self.offset)
-    }
-}
-
 pub trait Mixer: Sync {
     fn mix(&self, x: u64) -> u64;
 }
 
-trait OpListMixer: Sync {
-    fn operations(&self) -> Vec<Box<dyn MixerOp>>;
-}
-
-impl<M: OpListMixer> Mixer for M {
-    fn mix(&self, mut x: u64) -> u64 {
-        for op in self.operations().iter() {
-            x = op.eval(x);
-        }
-
-        x
+impl Mixer for CompiledMixer {
+    fn mix(&self, x: u64) -> u64 {
+        self.call(x)
     }
 }
 
@@ -341,37 +265,32 @@ impl<M: Mixer> Mixer for PreXorPi<M> {
 
 pub struct MixerInfo<'a> {
     pub name: &'a str,
-    pub func: &'a dyn Mixer,
+    pub func: fn() -> Box<dyn Mixer>,
 }
 
 pub const MIXERS: &[MixerInfo] = &[
-    MixerInfo { name: "trivial", func: &Trivial { } },
-    // MixerInfo {
-    //     name: "xorpi",
-    //     func: &PreXorPi { inner: Trivial { } }
-    // },
-    MixerInfo { name: "fake_ava", func: &FakeAva { } },
-    MixerInfo { name: "deluxe_fake_ava", func: &DeluxeFakeAva { } },
-    MixerInfo { name: "terrible_pi", func: &TerriblePi { } },
-    // MixerInfo {
-    //     name: "prexorpi:terrible_pi",
-    //     func: &PreXorPi { inner: TerriblePi { } }
-    // },
-    MixerInfo { name: "lousy_pi", func: &LousyPi { } },
-    MixerInfo { name: "xorshuffle:4", func: &XorShuffle { rounds: 4 } },
-    MixerInfo { name: "xorshuffle:5", func: &XorShuffle { rounds: 5 } },
-    MixerInfo { name: "mutashuffle", func: &MutaShuffle },
-    MixerInfo { name: "easynut", func: &EasyNut { } },
-    MixerInfo { name: "murmurhash3", func: &MurmurHash3 },
-    MixerInfo { name: "extended_murmurhash3:3", func: &ExtendedMurmurHash3 { rounds: 3 } },
+    MixerInfo { name: "trivial", func: || Box::new(Trivial) },
+    MixerInfo { name: "fake_ava", func: || Box::new(FakeAva) },
+    MixerInfo { name: "deluxe_fake_ava", func: || Box::new(DeluxeFakeAva) },
+    MixerInfo { name: "terrible_pi", func: || Box::new(TerriblePi) },
+    MixerInfo { name: "lousy_pi", func: || Box::new(LousyPi) },
+    MixerInfo { name: "xorshuffle:4", func: || Box::new(XorShuffle { rounds: 4 }) },
+    MixerInfo { name: "xorshuffle:5", func: || Box::new(XorShuffle { rounds: 5 }) },
+    MixerInfo { name: "mutashuffle", func: || Box::new(MutaShuffle) },
+    MixerInfo { name: "easynut", func: || Box::new(EasyNut) },
+    MixerInfo { name: "murmurhash3", func: || Box::new(MurmurHash3.compile()) },
+    MixerInfo {
+        name: "extended_murmurhash3:3",
+        func: || Box::new(ExtendedMurmurHash3 { rounds: 3 })
+    },
     MixerInfo {
         name: "prexorpi:murmurhash3",
-        func: &PreXorPi { inner: MurmurHash3 { } }
+        func: || Box::new(PreXorPi { inner: MurmurHash3.compile() })
     },
-    MixerInfo { name: "nasam", func: &NASAM { } },
-    MixerInfo { name: "double_nasam", func: &DoubleNasam { } },
+    MixerInfo { name: "nasam", func: || Box::new(NASAM) },
+    MixerInfo { name: "double_nasam", func: || Box::new(DoubleNasam) },
     MixerInfo {
         name: "prexorpi:nasam",
-        func: &PreXorPi { inner: NASAM { } }
+        func: || Box::new(PreXorPi { inner: NASAM })
     },
 ];
