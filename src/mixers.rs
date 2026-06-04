@@ -172,15 +172,15 @@ impl Mixer for EasyNut {
 // https://github.com/aappleby/smhasher/blob/master/src/MurmurHash3.cpp
 struct MurmurHash3;
 impl OpListMixer for MurmurHash3 {
-    fn build(&self, mut x: OpListBuilder) {
+    fn build(&self, x: &mut OpListBuilder) {
         const M1: u64 = 0xFF51AFD7ED558CCD;
         const M2: u64 = 0xC4CEB9FE1A85EC53;
 
-        x ^= x >> 33;
-        x *= M1;
-        x ^= x >> 33;
-        x *= M2;
-        x ^= x >> 33;
+        x.xorshift_right(33);
+        x.multiply(M1);
+        x.xorshift_right(33);
+        x.multiply(M2);
+        x.xorshift_right(33);
     }
 }
 
