@@ -18,7 +18,10 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
+use std::fmt::{Display, Formatter};
+
 // Multiplicative inverse
+#[allow(dead_code)]
 fn mulinv(x: u64) -> u64 {
     let mut inv = x;
 
@@ -29,8 +32,92 @@ fn mulinv(x: u64) -> u64 {
     inv
 }
 
+trait MixerOp {
+    fn eval(&self, x: u64) -> u64;
+}
+
+struct MultiplyOp {
+    multiplier: u64,
+}
+
+impl MultiplyOp {
+    fn new(multiplier: u64) -> Result<Self, MultiplyOpOperandError> {
+        if multiplier % 2 == 1 {
+            Ok(MultiplyOp { multiplier })
+        } else {
+            Err(MultiplyOpOperandError { multiplier })
+        }
+    }
+}
+
+#[derive(Debug)]
+struct MultiplyOpOperandError {
+    multiplier: u64,
+}
+
+impl Display for MultiplyOpOperandError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+        write!(f,
+            "invalid multiplier: expected odd number but {:016x} is even",
+            self.multiplier)
+    }
+}
+
+impl MixerOp for MultiplyOp {
+    fn eval(&self, x: u64) -> u64 {
+        x.wrapping_mul(self.multiplier)
+    }
+}
+
+struct XorshiftRightOp {
+    offset: u64,
+}
+
+impl XorshiftRightOp {
+    fn new(offset: u64) -> Result<Self, XorshiftRightOpOperandError> {
+        if offset >= 1 && offset <= 64 {
+            Ok(XorshiftRightOp { offset })
+        } else {
+            Err(XorshiftRightOpOperandError { offset })
+        }
+    }
+}
+
+#[derive(Debug)]
+struct XorshiftRightOpOperandError {
+    offset: u64,
+}
+
+impl Display for XorshiftRightOpOperandError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
+        write!(f,
+            "invalid offset: expected number in range 1 to 64 but {} is even",
+            self.offset)
+    }
+}
+
+impl MixerOp for XorshiftRightOp {
+    fn eval(&self, x: u64) -> u64 {
+        x ^ (x >> self.offset)
+    }
+}
+
 pub trait Mixer: Sync {
     fn mix(&self, x: u64) -> u64;
+}
+
+trait OpListMixer: Sync {
+    fn operations(&self) -> Vec<Box<dyn MixerOp>>;
+}
+
+impl<M: OpListMixer> Mixer for M {
+    fn mix(&self, mut x: u64) -> u64 {
+        for op in self.operations().iter() {
+            x = op.eval(x);
+        }
+
+        x
+    }
 }
 
 // A totally trivial mixing function that literally does nothing.
@@ -162,20 +249,18 @@ impl Mixer for EasyNut {
 // The venerable MurmurHash3 finalizer (fmix64), taken from
 // https://github.com/aappleby/smhasher/blob/master/src/MurmurHash3.cpp
 struct MurmurHash3;
-impl Mixer for MurmurHash3 {
-    fn mix(&self, mut x: u64) -> u64 {
+impl OpListMixer for MurmurHash3 {
+    fn operations(&self) -> Vec<Box<dyn MixerOp>> {
         const M1: u64 = 0xFF51AFD7ED558CCD;
         const M2: u64 = 0xC4CEB9FE1A85EC53;
 
-        x ^= x >> 33;
-
-        x = x.wrapping_mul(M1);
-        x ^= x >> 33;
-
-        x = x.wrapping_mul(M2);
-        x ^= x >> 33;
-
-        x
+        vec!(
+            Box::new(XorshiftRightOp::new(33).unwrap()),
+            Box::new(MultiplyOp::new(M1).unwrap()),
+            Box::new(XorshiftRightOp::new(33).unwrap()),
+            Box::new(MultiplyOp::new(M2).unwrap()),
+            Box::new(XorshiftRightOp::new(33).unwrap()),
+        )
     }
 }
 

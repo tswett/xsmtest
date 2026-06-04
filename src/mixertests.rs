@@ -99,12 +99,6 @@ pub struct MixerTestContext<'a> {
     pub samples: u64,
 }
 
-impl<'a> MixerTestContext<'a> {
-    fn split(&mut self) -> Self {
-        MixerTestContext { prng: self.prng.get_prng(), ..*self }
-    }
-}
-
 pub trait MixerTest {
     fn run_test(&self, ctx: MixerTestContext);
 }
