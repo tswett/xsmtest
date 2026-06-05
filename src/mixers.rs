@@ -44,10 +44,8 @@ impl Mixer for CompiledMixer {
 
 // A totally trivial mixing function that literally does nothing.
 struct Trivial;
-impl Mixer for Trivial {
-    fn mix(&self, x: u64) -> u64 {
-        x
-    }
+impl OpListMixer for Trivial {
+    fn build(&self, _x: &mut OpListBuilder) { }
 }
 
 // An atrocious mixing function which gets the mean Hamming distance right, but
@@ -98,22 +96,20 @@ const PI64: u64 = 0x3243F6A8885A308D;
 
 // This gives us some avalanching, but not much.
 struct TerriblePi;
-impl Mixer for TerriblePi {
-    fn mix(&self, x: u64) -> u64 {
-        x.wrapping_mul(PI64)
+impl OpListMixer for TerriblePi {
+    fn build(&self, x: &mut OpListBuilder) {
+        x.multiply(PI64);
     }
 }
 
 // A little bit more avalanching, but not enough.
 struct LousyPi;
-impl Mixer for LousyPi {
-    fn mix(&self, mut x: u64) -> u64 {
-        x = x.wrapping_mul(PI64);
-        x ^= x >> 32;
+impl OpListMixer for LousyPi {
+    fn build(&self, x: &mut OpListBuilder) {
+        x.multiply(PI64);
+        x.xorshift_right(32);
 
-        x = x.wrapping_mul(PI64);
-
-        x
+        x.multiply(PI64);
     }
 }
 
@@ -158,13 +154,12 @@ impl Mixer for MutaShuffle {
 
 // A terrible mixer that should be easy to automatically analyze.
 struct EasyNut;
-impl Mixer for EasyNut {
-    fn mix(&self, mut x: u64) -> u64 {
-        x = x.wrapping_mul(19);
-        x ^= x >> 1;
-        x = x.wrapping_mul(19);
+impl OpListMixer for EasyNut {
+    fn build(&self, x: &mut OpListBuilder) {
+        x.multiply(19);
+        x.xorshift_right(1);
 
-        x
+        x.multiply(19);
     }
 }
 
@@ -177,8 +172,10 @@ impl OpListMixer for MurmurHash3 {
         const M2: u64 = 0xC4CEB9FE1A85EC53;
 
         x.xorshift_right(33);
+
         x.multiply(M1);
         x.xorshift_right(33);
+
         x.multiply(M2);
         x.xorshift_right(33);
     }
@@ -187,19 +184,17 @@ impl OpListMixer for MurmurHash3 {
 struct ExtendedMurmurHash3 {
     rounds: u32,
 }
-impl Mixer for ExtendedMurmurHash3 {
-    fn mix(&self, mut x: u64) -> u64 {
+impl OpListMixer for ExtendedMurmurHash3 {
+    fn build(&self, x: &mut OpListBuilder) {
         const M1: u64 = 0xFF51AFD7ED558CCD;
         const M2: u64 = 0xC4CEB9FE1A85EC53;
 
-        x ^= x >> 33;
+        x.xorshift_right(33);
 
         for round in 0..self.rounds {
-            x = x.wrapping_mul(if round % 2 == 0 { M1 } else { M2 });
-            x ^= x >> 33;
+            x.multiply(if round % 2 == 0 { M1 } else { M2 });
+            x.xorshift_right(33);
         }
-
-        x
     }
 }
 
@@ -265,19 +260,19 @@ pub struct MixerInfo<'a> {
 }
 
 pub const MIXERS: &[MixerInfo] = &[
-    MixerInfo { name: "trivial", func: || Box::new(Trivial) },
+    MixerInfo { name: "trivial", func: || Box::new(Trivial.compile()) },
     MixerInfo { name: "fake_ava", func: || Box::new(FakeAva) },
     MixerInfo { name: "deluxe_fake_ava", func: || Box::new(DeluxeFakeAva) },
-    MixerInfo { name: "terrible_pi", func: || Box::new(TerriblePi) },
-    MixerInfo { name: "lousy_pi", func: || Box::new(LousyPi) },
+    MixerInfo { name: "terrible_pi", func: || Box::new(TerriblePi.compile()) },
+    MixerInfo { name: "lousy_pi", func: || Box::new(LousyPi.compile()) },
     MixerInfo { name: "xorshuffle:4", func: || Box::new(XorShuffle { rounds: 4 }) },
     MixerInfo { name: "xorshuffle:5", func: || Box::new(XorShuffle { rounds: 5 }) },
     MixerInfo { name: "mutashuffle", func: || Box::new(MutaShuffle) },
-    MixerInfo { name: "easynut", func: || Box::new(EasyNut) },
+    MixerInfo { name: "easynut", func: || Box::new(EasyNut.compile()) },
     MixerInfo { name: "murmurhash3", func: || Box::new(MurmurHash3.compile()) },
     MixerInfo {
         name: "extended_murmurhash3:3",
-        func: || Box::new(ExtendedMurmurHash3 { rounds: 3 })
+        func: || Box::new(ExtendedMurmurHash3 { rounds: 3 }.compile())
     },
     MixerInfo {
         name: "prexorpi:murmurhash3",
