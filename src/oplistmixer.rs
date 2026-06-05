@@ -26,7 +26,7 @@ use cranelift_codegen::Context;
 use cranelift_codegen::ir::types::I64;
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{FuncId, Linkage, Module};
-use std::fmt::{Display, Formatter};
+use std::fmt::{Display, Error, Formatter};
 
 pub trait MixerOp {
     #[allow(dead_code)]
@@ -35,30 +35,40 @@ pub trait MixerOp {
     fn compile(&self, func_builder: &mut FunctionBuilder, input: Value) -> Value;
 }
 
+#[derive(Debug)]
+pub enum ParameterError {
+    MultiplierError { multiplier: u64 },
+    OffsetError { offset: i32 },
+    RotateCountError { count: usize },
+}
+
+impl Display for ParameterError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
+        match self {
+            ParameterError::MultiplierError { multiplier } => write!(f,
+                "invalid multiplier: expected odd number but {:016x} is even",
+                multiplier),
+            ParameterError::OffsetError { offset } => write!(f,
+                "invalid offset: expected number in range 1 to 64 but {} is outside that range",
+                offset),
+            ParameterError::RotateCountError { count } => write!(f,
+                "invalid number of offsets: expected an even number of offsets but there are {} here",
+                count),
+        }
+    }
+}
+
 pub struct MultiplyOp {
     multiplier: u64,
 }
 
 impl MultiplyOp {
-    pub fn new(multiplier: u64) -> Result<Self, MultiplyOpOperandError> {
+    pub fn new(multiplier: u64) -> Result<Self, ParameterError> {
         if multiplier % 2 == 1 {
             Ok(MultiplyOp { multiplier })
         } else {
-            Err(MultiplyOpOperandError { multiplier })
+            Err(ParameterError::MultiplierError { multiplier })
         }
-    }
-}
-
-#[derive(Debug)]
-pub struct MultiplyOpOperandError {
-    multiplier: u64,
-}
-
-impl Display for MultiplyOpOperandError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
-        write!(f,
-            "invalid multiplier: expected odd number but {:016x} is even",
-            self.multiplier)
     }
 }
 
@@ -75,42 +85,125 @@ impl MixerOp for MultiplyOp {
 }
 
 pub struct XorshiftRightOp {
-    offset: u64,
+    offsets: Vec<i32>,
 }
 
 impl XorshiftRightOp {
-    pub fn new(offset: u64) -> Result<Self, XorshiftRightOpOperandError> {
-        if offset >= 1 && offset <= 64 {
-            Ok(XorshiftRightOp { offset })
-        } else {
-            Err(XorshiftRightOpOperandError { offset })
+    pub fn new(offsets: Vec<i32>) -> Result<Self, ParameterError> {
+        for &offset in &offsets {
+            if !(offset >= 1 && offset <= 64) {
+                return Err(ParameterError::OffsetError { offset })
+            }
         }
+
+        Ok(XorshiftRightOp { offsets })
     }
-}
 
-#[derive(Debug)]
-pub struct XorshiftRightOpOperandError {
-    offset: u64,
-}
-
-impl Display for XorshiftRightOpOperandError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), std::fmt::Error> {
-        write!(f,
-            "invalid offset: expected number in range 1 to 64 but {} is even",
-            self.offset)
+    pub fn new_single(offset: i32) -> Result<Self, ParameterError> {
+        Self::new(vec!(offset))
     }
 }
 
 impl MixerOp for XorshiftRightOp {
     fn eval(&self, x: u64) -> u64 {
-        x ^ (x >> self.offset)
+        let mut result = x;
+        for offset in &self.offsets {
+            result ^= x >> offset;
+        }
+        result
     }
 
     fn compile(&self, func_builder: &mut FunctionBuilder, input: Value)
         -> Value
     {
-        let shifted = func_builder.ins().ushr_imm(input, self.offset as i64);
-        func_builder.ins().bxor(input, shifted)
+        let mut result = input;
+        for offset in &self.offsets {
+            let shifted = func_builder.ins().ushr_imm(input, *offset as i64);
+            result = func_builder.ins().bxor(result, shifted);
+        }
+        result
+    }
+}
+
+pub struct XorshiftLeftOp {
+    offsets: Vec<i32>,
+}
+
+impl XorshiftLeftOp {
+    pub fn new(offsets: Vec<i32>) -> Result<Self, ParameterError> {
+        for &offset in &offsets {
+            if !(offset >= 1 && offset <= 64) {
+                return Err(ParameterError::OffsetError { offset })
+            }
+        }
+
+        Ok(XorshiftLeftOp { offsets })
+    }
+
+    pub fn new_single(offset: i32) -> Result<Self, ParameterError> {
+        Self::new(vec!(offset))
+    }
+}
+
+impl MixerOp for XorshiftLeftOp {
+    fn eval(&self, x: u64) -> u64 {
+        let mut result = x;
+        for offset in &self.offsets {
+            result ^= x << offset;
+        }
+        result
+    }
+
+    fn compile(&self, func_builder: &mut FunctionBuilder, input: Value)
+        -> Value
+    {
+        let mut result = input;
+        for offset in &self.offsets {
+            let shifted = func_builder.ins().ishl_imm(input, *offset as i64);
+            result = func_builder.ins().bxor(result, shifted);
+        }
+        result
+    }
+}
+
+pub struct XorrotateRightOp {
+    offsets: Vec<i32>,
+}
+
+impl XorrotateRightOp {
+    pub fn new(offsets: Vec<i32>) -> Result<Self, ParameterError> {
+        if offsets.len() % 2 != 0 {
+            return Err(ParameterError::RotateCountError { count: offsets.len() })
+        }
+
+        for &offset in &offsets {
+            if !(offset >= 1 && offset <= 64) {
+                return Err(ParameterError::OffsetError { offset })
+            }
+        }
+
+        Ok(XorrotateRightOp { offsets })
+    }
+}
+
+impl MixerOp for XorrotateRightOp {
+    fn eval(&self, x: u64) -> u64 {
+        let mut result = x;
+        for offset in &self.offsets {
+            result &= x.rotate_right(*offset as u32);
+        }
+        result
+    }
+
+    fn compile(&self, func_builder: &mut FunctionBuilder, input: Value)
+        -> Value
+    {
+        let mut result = input;
+        for offset in &self.offsets {
+            let shifted = func_builder.ins().rotr_imm(input, *offset as i64);
+            result = func_builder.ins().bxor(result, shifted);
+        }
+        result
     }
 }
 
@@ -120,12 +213,35 @@ pub struct OpListBuilder {
 }
 
 impl OpListBuilder {
-    pub fn xorshift_right(&mut self, offset: u64) {
-        self.op_list.push(Box::new(XorshiftRightOp::new(offset).unwrap()));
+    pub fn xorshift_right(&mut self, offset: i32) {
+        self.op_list.push(Box::new(
+            XorshiftRightOp::new_single(offset).unwrap()));
+    }
+
+    pub fn xorshift_left(&mut self, offset: i32) {
+        self.op_list.push(Box::new(
+            XorshiftLeftOp::new_single(offset).unwrap()));
+    }
+
+    pub fn xorshift_right_m(&mut self, offsets: Vec<i32>) {
+        self.op_list.push(Box::new(
+            XorshiftRightOp::new(offsets).unwrap()));
+    }
+
+    #[allow(dead_code)]
+    pub fn xorshift_left_m(&mut self, offsets: Vec<i32>) {
+        self.op_list.push(Box::new(
+            XorshiftLeftOp::new(offsets).unwrap()));
+    }
+
+    pub fn xorrotate_right_m(&mut self, offsets: Vec<i32>) {
+        self.op_list.push(Box::new(
+            XorrotateRightOp::new(offsets).unwrap()));
     }
 
     pub fn multiply(&mut self, multiplier: u64) {
-        self.op_list.push(Box::new(MultiplyOp::new(multiplier).unwrap()));
+        self.op_list.push(Box::new(
+            MultiplyOp::new(multiplier).unwrap()));
     }
 }
 

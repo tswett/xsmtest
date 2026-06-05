@@ -116,39 +116,35 @@ impl OpListMixer for LousyPi {
 struct XorShuffle {
     rounds: u32,
 }
-impl Mixer for XorShuffle {
-    fn mix(&self, mut x: u64) -> u64 {
+impl OpListMixer for XorShuffle {
+    fn build(&self, x: &mut OpListBuilder) {
         for _ in 0..self.rounds {
-            x ^= x >> 23;
-            x ^= x << 17;
-            x ^= x >> 13;
-            x ^= x << 10;
+            x.xorshift_right(23);
+            x.xorshift_left(17);
+            x.xorshift_right(13);
+            x.xorshift_left(10);
         }
-
-        x
     }
 }
 
 // A shift-only mixer created entirely via mutation testing.
 struct MutaShuffle;
-impl Mixer for MutaShuffle {
-    fn mix(&self, mut x: u64) -> u64 {
-        x ^= x >> 1;
-        x ^= x << 2;
-        x ^= x >> 4;
-        x ^= x << 8;
-        x ^= x >> 16;
-        x ^= x << 59;
-        x ^= x >> 18;
-        x ^= x << 9;
-        x ^= x >> 53;
-        x ^= x << 63;
-        x ^= x >> 29;
-        x ^= x << 56;
-        x ^= x >> 15;
-        x ^= x << 50;
-
-        x
+impl OpListMixer for MutaShuffle {
+    fn build(&self, x: &mut OpListBuilder) {
+        x.xorshift_right(1);
+        x.xorshift_left(2);
+        x.xorshift_right(4);
+        x.xorshift_left(8);
+        x.xorshift_right(16);
+        x.xorshift_left(59);
+        x.xorshift_right(18);
+        x.xorshift_left(9);
+        x.xorshift_right(53);
+        x.xorshift_left(63);
+        x.xorshift_right(29);
+        x.xorshift_left(56);
+        x.xorshift_right(15);
+        x.xorshift_left(50);
     }
 }
 
@@ -201,20 +197,18 @@ impl OpListMixer for ExtendedMurmurHash3 {
 // Pelle Evensen's NASAM, from
 // https://mostlymangling.blogspot.com/2020/01/nasam-not-another-strange-acronym-mixer.html
 struct NASAM;
-impl Mixer for NASAM {
-    fn mix(&self, mut x: u64) -> u64 {
+impl OpListMixer for NASAM {
+    fn build(&self, x: &mut OpListBuilder) {
         const M1: u64 = 0x9E6C63D0676A9A99;
         const M2: u64 = 0x9E6D62D06F6A9A9B;
 
-        x ^= x.rotate_right(25) ^ x.rotate_right(47);
+        x.xorrotate_right_m(vec!(25, 47));
 
-        x = x.wrapping_mul(M1);
-        x ^= (x >> 23) ^ (x >> 51);
+        x.multiply(M1);
+        x.xorshift_right_m(vec!(23, 51));
 
-        x = x.wrapping_mul(M2);
-        x ^= (x >> 23) ^ (x >> 51);
-
-        x
+        x.multiply(M2);
+        x.xorshift_right_m(vec!(23, 51));
     }
 }
 
@@ -265,9 +259,15 @@ pub const MIXERS: &[MixerInfo] = &[
     MixerInfo { name: "deluxe_fake_ava", func: || Box::new(DeluxeFakeAva) },
     MixerInfo { name: "terrible_pi", func: || Box::new(TerriblePi.compile()) },
     MixerInfo { name: "lousy_pi", func: || Box::new(LousyPi.compile()) },
-    MixerInfo { name: "xorshuffle:4", func: || Box::new(XorShuffle { rounds: 4 }) },
-    MixerInfo { name: "xorshuffle:5", func: || Box::new(XorShuffle { rounds: 5 }) },
-    MixerInfo { name: "mutashuffle", func: || Box::new(MutaShuffle) },
+    MixerInfo {
+        name: "xorshuffle:4",
+        func: || Box::new(XorShuffle { rounds: 4 }.compile())
+    },
+    MixerInfo {
+        name: "xorshuffle:5",
+        func: || Box::new(XorShuffle { rounds: 5 }.compile())
+    },
+    MixerInfo { name: "mutashuffle", func: || Box::new(MutaShuffle.compile()) },
     MixerInfo { name: "easynut", func: || Box::new(EasyNut.compile()) },
     MixerInfo { name: "murmurhash3", func: || Box::new(MurmurHash3.compile()) },
     MixerInfo {
@@ -278,10 +278,10 @@ pub const MIXERS: &[MixerInfo] = &[
         name: "prexorpi:murmurhash3",
         func: || Box::new(PreXorPi { inner: MurmurHash3.compile() })
     },
-    MixerInfo { name: "nasam", func: || Box::new(NASAM) },
+    MixerInfo { name: "nasam", func: || Box::new(NASAM.compile()) },
     MixerInfo { name: "double_nasam", func: || Box::new(DoubleNasam) },
     MixerInfo {
         name: "prexorpi:nasam",
-        func: || Box::new(PreXorPi { inner: NASAM })
+        func: || Box::new(PreXorPi { inner: NASAM.compile() })
     },
 ];
