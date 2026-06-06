@@ -219,6 +219,36 @@ impl OpListMixer for Mix13 {
     }
 }
 
+struct RotatoryPi;
+impl OpListMixer for RotatoryPi {
+    fn build(&self, x: &mut OpListBuilder) {
+        x.xorrotate_right_m(vec!(21, 43));
+
+        x.multiply(PI64);
+        x.xorrotate_right_m(vec!(21, 43));
+
+        x.multiply(PI64);
+        x.xorrotate_right_m(vec!(21, 43));
+    }
+}
+
+struct PadRotPi;
+impl OpListMixer for PadRotPi {
+    fn build(&self, x: &mut OpListBuilder) {
+        x.xor(PI64);
+
+        x.xorrotate_right_m(vec!(21, 43));
+
+        x.multiply(PI64);
+        x.xorrotate_right_m(vec!(21, 43));
+
+        x.multiply(PI64);
+        x.xorrotate_right_m(vec!(21, 43));
+
+        x.xor(PI64);
+    }
+}
+
 // Pelle Evensen's NASAM, from
 // https://mostlymangling.blogspot.com/2020/01/nasam-not-another-strange-acronym-mixer.html
 struct NASAM;
@@ -297,6 +327,8 @@ pub const MIXERS: &[MixerInfo] = &[
         func: || Box::new(PreXorPi { inner: MurmurHash3.compile() })
     },
     MixerInfo { name: "mix13", func: || Box::new(Mix13.compile()) },
+    MixerInfo { name: "rotatory_pi", func: || Box::new(RotatoryPi.compile()) },
+    MixerInfo { name: "padrot_pi", func: || Box::new(PadRotPi.compile()) },
     MixerInfo { name: "nasam", func: || Box::new(NASAM.compile()) },
     MixerInfo { name: "double_nasam", func: || Box::new(DoubleNasam) },
     MixerInfo {

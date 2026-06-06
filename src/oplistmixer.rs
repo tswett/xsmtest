@@ -186,6 +186,28 @@ impl XorrotateRightOp {
     }
 }
 
+pub struct XorOp {
+    pad: u64,
+}
+
+impl XorOp {
+    pub fn new(pad: u64) -> Self {
+        XorOp { pad }
+    }
+}
+
+impl MixerOp for XorOp {
+    fn eval(&self, x: u64) -> u64 {
+        x ^ self.pad
+    }
+
+    fn compile(&self, func_builder: &mut FunctionBuilder, input: Value)
+        -> Value
+    {
+        func_builder.ins().bxor_imm(input, self.pad as i64)
+    }
+}
+
 impl MixerOp for XorrotateRightOp {
     fn eval(&self, x: u64) -> u64 {
         let mut result = x;
@@ -237,6 +259,11 @@ impl OpListBuilder {
     pub fn xorrotate_right_m(&mut self, offsets: Vec<i32>) {
         self.op_list.push(Box::new(
             XorrotateRightOp::new(offsets).unwrap()));
+    }
+
+    pub fn xor(&mut self, pad: u64) {
+        self.op_list.push(Box::new(
+            XorOp::new(pad)));
     }
 
     pub fn multiply(&mut self, multiplier: u64) {
