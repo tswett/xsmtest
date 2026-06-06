@@ -113,20 +113,6 @@ impl OpListMixer for LousyPi {
     }
 }
 
-struct XorShuffle {
-    rounds: u32,
-}
-impl OpListMixer for XorShuffle {
-    fn build(&self, x: &mut OpListBuilder) {
-        for _ in 0..self.rounds {
-            x.xorshift_right(23);
-            x.xorshift_left(17);
-            x.xorshift_right(13);
-            x.xorshift_left(10);
-        }
-    }
-}
-
 // A shift-only mixer created entirely via mutation testing.
 struct MutaShuffle;
 impl OpListMixer for MutaShuffle {
@@ -159,13 +145,26 @@ impl OpListMixer for EasyNut {
     }
 }
 
-// The venerable MurmurHash3 finalizer (fmix64), taken from
+struct DecentPi;
+impl OpListMixer for DecentPi {
+    fn build(&self, x: &mut OpListBuilder) {
+        x.xorshift_right(32);
+
+        x.multiply(PI64);
+        x.xorshift_right(32);
+
+        x.multiply(PI64);
+        x.xorshift_right(32);
+    }
+}
+
+// The venerable finalizer from MurmurHash3 (fmix64), taken from
 // https://github.com/aappleby/smhasher/blob/master/src/MurmurHash3.cpp
 struct MurmurHash3;
 impl OpListMixer for MurmurHash3 {
     fn build(&self, x: &mut OpListBuilder) {
-        const M1: u64 = 0xFF51AFD7ED558CCD;
-        const M2: u64 = 0xC4CEB9FE1A85EC53;
+        const M1: u64 = 0xff51afd7ed558ccd;
+        const M2: u64 = 0xc4ceb9fe1a85ec53;
 
         x.xorshift_right(33);
 
@@ -182,8 +181,8 @@ struct ExtendedMurmurHash3 {
 }
 impl OpListMixer for ExtendedMurmurHash3 {
     fn build(&self, x: &mut OpListBuilder) {
-        const M1: u64 = 0xFF51AFD7ED558CCD;
-        const M2: u64 = 0xC4CEB9FE1A85EC53;
+        const M1: u64 = 0xff51afd7ed558ccd;
+        const M2: u64 = 0xc4ceb9fe1a85ec53;
 
         x.xorshift_right(33);
 
@@ -191,6 +190,32 @@ impl OpListMixer for ExtendedMurmurHash3 {
             x.multiply(if round % 2 == 0 { M1 } else { M2 });
             x.xorshift_right(33);
         }
+    }
+}
+
+// David Stafford's Mix13 variant of the finalizer from MurmurHash3, taken from
+// http://zimbry.blogspot.com/2011/09/better-bit-mixing-improving-on.html
+// This mixer is used in the SplitMix64 PRNG, and, indeed, it's often called
+// "the SplitMix64 finalizer." This name is doubly incorrect: SplitMix64
+// postdates Mix13 by a couple of years, and although Mix13 is used in
+// SplitMix64, it's not used as the finalizer; SplitMix64 actually uses the same
+// finalizer as MurmurHash3.
+//
+// This design is occasionally misattributed to Sebastiano Vigna, who did not
+// design it and has never claimed to have designed it.
+struct Mix13;
+impl OpListMixer for Mix13 {
+    fn build(&self, x: &mut OpListBuilder) {
+        const M1: u64 = 0xbf58476d1ce4e5b9;
+        const M2: u64 = 0x94d049bb133111eb;
+
+        x.xorshift_right(30);
+
+        x.multiply(M1);
+        x.xorshift_right(27);
+
+        x.multiply(M2);
+        x.xorshift_right(31);
     }
 }
 
@@ -259,16 +284,9 @@ pub const MIXERS: &[MixerInfo] = &[
     MixerInfo { name: "deluxe_fake_ava", func: || Box::new(DeluxeFakeAva) },
     MixerInfo { name: "terrible_pi", func: || Box::new(TerriblePi.compile()) },
     MixerInfo { name: "lousy_pi", func: || Box::new(LousyPi.compile()) },
-    MixerInfo {
-        name: "xorshuffle:4",
-        func: || Box::new(XorShuffle { rounds: 4 }.compile())
-    },
-    MixerInfo {
-        name: "xorshuffle:5",
-        func: || Box::new(XorShuffle { rounds: 5 }.compile())
-    },
     MixerInfo { name: "mutashuffle", func: || Box::new(MutaShuffle.compile()) },
     MixerInfo { name: "easynut", func: || Box::new(EasyNut.compile()) },
+    MixerInfo { name: "decent_pi", func: || Box::new(DecentPi.compile()) },
     MixerInfo { name: "murmurhash3", func: || Box::new(MurmurHash3.compile()) },
     MixerInfo {
         name: "extended_murmurhash3:3",
@@ -278,6 +296,7 @@ pub const MIXERS: &[MixerInfo] = &[
         name: "prexorpi:murmurhash3",
         func: || Box::new(PreXorPi { inner: MurmurHash3.compile() })
     },
+    MixerInfo { name: "mix13", func: || Box::new(Mix13.compile()) },
     MixerInfo { name: "nasam", func: || Box::new(NASAM.compile()) },
     MixerInfo { name: "double_nasam", func: || Box::new(DoubleNasam) },
     MixerInfo {
