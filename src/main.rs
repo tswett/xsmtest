@@ -41,12 +41,15 @@ struct Args {
 
     #[arg(long, value_enum, default_value_t = TestType::Avalanche)]
     test: TestType,
+
+    #[arg(long, default_value_t = 0)]
+    seed: u64,
 }
 
 fn main() {
-    let mut prng = PRNG::from_seed(0);
-
     let args = Args::parse();
+
+    let mut prng = PRNG::from_seed(args.seed);
 
     let test: &dyn MixerTest = match args.test {
         TestType::Avalanche => &Avalanche,
