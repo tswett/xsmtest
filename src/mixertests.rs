@@ -20,7 +20,7 @@
 
 use clap::ValueEnum;
 use rayon::iter::{ParallelBridge, ParallelIterator};
-use std::ops::{Add, AddAssign};
+use std::ops::{Add, AddAssign, Range};
 
 use crate::mixers::Mixer;
 use crate::prng::PRNG;
@@ -99,6 +99,15 @@ pub struct MixerTestContext<'a> {
     pub samples: u64,
 }
 
+impl<'a> MixerTestContext<'a> {
+    fn split(&mut self) -> Self {
+        MixerTestContext {
+            prng: self.prng.get_prng(),
+            ..*self
+        }
+    }
+}
+
 pub trait MixerTest {
     fn run_test(&self, ctx: MixerTestContext);
 }
@@ -137,7 +146,10 @@ impl Iterator for BatchMaker {
 pub struct Avalanche;
 
 impl Avalanche {
-    fn test_inner(mut prng: PRNG, mixer: &dyn Mixer, samples: u64) -> RawStats {
+    fn test_inner(
+        mut prng: PRNG, mixer: &dyn Mixer, samples: u64, bit_range: Range<i32>)
+        -> RawStats
+    {
         let mut stats = RawStats::default();
 
         for _ in 0..samples {
@@ -145,7 +157,7 @@ impl Avalanche {
 
             let output1 = mixer.mix(input1);
 
-            for bit in 0..64 {
+            for bit in bit_range.clone() {
                 let input2 = input1 ^ (1u64 << bit);
                 let output2 = mixer.mix(input2);
 
@@ -158,11 +170,14 @@ impl Avalanche {
         stats
     }
 
-    fn avalanche_test(ctx: MixerTestContext) -> SampleStats {
+    fn avalanche_test(ctx: MixerTestContext, bit_range: Range<i32>)
+        -> SampleStats
+    {
         let stats: RawStats = BatchMaker { prng: ctx.prng, samples: ctx.samples }
             .par_bridge()
             .map(|batch_info|
-                Self::test_inner(batch_info.prng, ctx.mixer, batch_info.samples))
+                Self::test_inner(
+                    batch_info.prng, ctx.mixer, batch_info.samples, bit_range.clone()))
             .reduce(RawStats::default, |a, b| a + b);
 
         let expected_mean: f64 = 32.0;
@@ -176,12 +191,34 @@ impl MixerTest for Avalanche {
     fn run_test(&self, ctx: MixerTestContext) {
         println!("Testing {} with {} samples:", ctx.name, ctx.samples);
 
-        let stats = Self::avalanche_test(ctx);
+        let stats = Self::avalanche_test(ctx, 0..64);
 
         println!("Mean Hamming distance: {:9.6} (Z = {:6.2})",
             stats.sample_mean, stats.mean_z);
         println!("Standard deviation   : {:9.6} (Z = {:6.2})",
             stats.sample_stddev, stats.stddev_z);
+        println!();
+    }
+}
+
+pub struct AvalancheBitwise;
+
+impl MixerTest for AvalancheBitwise {
+    fn run_test(&self, mut ctx: MixerTestContext) {
+        println!("Testing {} with {} samples:", ctx.name, ctx.samples);
+
+        for bit in 0..64 {
+            let stats = Avalanche::avalanche_test(ctx.split(), bit..bit+1);
+
+            println!(
+                "bit {:2}:    Mean: {:9.6}    Z: {:8.2}    Std dev: {:9.6}    Z: {:8.2}",
+                bit,
+                stats.sample_mean,
+                stats.mean_z,
+                stats.sample_stddev,
+                stats.stddev_z);
+        }
+
         println!();
     }
 }
@@ -471,6 +508,7 @@ impl MixerTest for Z3 {
 #[derive(Clone, ValueEnum)]
 pub enum TestType {
     Avalanche,
+    AvalancheBitwise,
     Powers,
     Shift,
     StrictAvalanche,

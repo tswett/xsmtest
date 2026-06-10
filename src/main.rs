@@ -26,14 +26,14 @@ mod prng;
 use clap::Parser;
 
 use crate::mixertests::{
-    Avalanche, MixerTest, MixerTestContext,
+    Avalanche, AvalancheBitwise, MixerTest, MixerTestContext,
     Powers, Shift, StrictAvalanche, TestType, Z3,
 };
 use crate::prng::PRNG;
 
 #[derive(Parser)]
 struct Args {
-    #[arg(long, default_value_t = 1 << 17)]
+    #[arg(long, default_value_t = 200000)]
     samples: u64,
 
     #[arg(long, default_value = "all")]
@@ -53,6 +53,7 @@ fn main() {
 
     let test: &dyn MixerTest = match args.test {
         TestType::Avalanche => &Avalanche,
+        TestType::AvalancheBitwise => &AvalancheBitwise,
         TestType::Powers => &Powers,
         TestType::Shift => &Shift,
         TestType::StrictAvalanche => &StrictAvalanche,
