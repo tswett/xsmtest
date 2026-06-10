@@ -78,13 +78,13 @@ struct DeluxeFakeAva;
 impl Mixer for DeluxeFakeAva {
     fn mix(&self, mut x: u64) -> u64 {
         if x.count_ones() % 2 == 1 {
-            x ^= 0x00000000_FFFFFFFF;
+            x ^= 0x00000000_ffffffff;
         }
-        if (x & 0x00000000_FFFFF000).count_ones() % 2 == 1 {
-            x ^= 0x00000000_0000000F;
+        if (x & 0x00000000_fffff000).count_ones() % 2 == 1 {
+            x ^= 0x00000000_0000000f;
         }
-        if (x & 0x000FFFFF_00000000).count_ones() % 2 == 1 {
-            x ^= 0xF0000000_00000000;
+        if (x & 0x000fffff_00000000).count_ones() % 2 == 1 {
+            x ^= 0xf0000000_00000000;
         }
 
         x
@@ -92,7 +92,7 @@ impl Mixer for DeluxeFakeAva {
 }
 
 // pi * 2^60, rounded to the nearest odd integer
-const PI64: u64 = 0x3243F6A8885A308D;
+const PI64: u64 = 0x3243f6a8885a308d;
 
 // This gives us some avalanching, but not much.
 struct TerriblePi;
@@ -219,6 +219,24 @@ impl OpListMixer for Mix13 {
     }
 }
 
+// Pelle Evensen's Moremur, from
+// https://mostlymangling.blogspot.com/2019/12/stronger-better-morer-moremur-better.html
+struct Moremur;
+impl OpListMixer for Moremur {
+    fn build(&self, x: &mut OpListBuilder) {
+        const M1: u64 = 0x3c79ac492ba7b653;
+        const M2: u64 = 0x1c69b3f74ac4ae35;
+
+        x.xorshift_right(27);
+
+        x.multiply(M1);
+        x.xorshift_right(33);
+
+        x.multiply(M2);
+        x.xorshift_right(27);
+    }
+}
+
 struct RotatoryPi;
 impl OpListMixer for RotatoryPi {
     fn build(&self, x: &mut OpListBuilder) {
@@ -254,8 +272,8 @@ impl OpListMixer for PadRotPi {
 struct NASAM;
 impl OpListMixer for NASAM {
     fn build(&self, x: &mut OpListBuilder) {
-        const M1: u64 = 0x9E6C63D0676A9A99;
-        const M2: u64 = 0x9E6D62D06F6A9A9B;
+        const M1: u64 = 0x9e6c63d0676a9a99;
+        const M2: u64 = 0x9e6d62d06f6a9a9b;
 
         x.xorrotate_right_m(vec!(25, 47));
 
@@ -271,8 +289,8 @@ impl OpListMixer for NASAM {
 // 
 // Exposed as a function so that the PRNG module can use it easily.
 pub fn double_nasam(mut x: u64) -> u64 {
-    const M1: u64 = 0x9E6C63D0676A9A99;
-    const M2: u64 = 0x9E6D62D06F6A9A9B;
+    const M1: u64 = 0x9e6c63d0676a9a99;
+    const M2: u64 = 0x9e6d62d06f6a9a9b;
 
     x ^= x.rotate_right(25) ^ x.rotate_right(47);
 
@@ -327,6 +345,7 @@ pub const MIXERS: &[MixerInfo] = &[
         func: || Box::new(PreXorPi { inner: MurmurHash3.compile() })
     },
     MixerInfo { name: "mix13", func: || Box::new(Mix13.compile()) },
+    MixerInfo { name: "moremur", func: || Box::new(Moremur.compile()) },
     MixerInfo { name: "rotatory_pi", func: || Box::new(RotatoryPi.compile()) },
     MixerInfo { name: "padrot_pi", func: || Box::new(PadRotPi.compile()) },
     MixerInfo { name: "nasam", func: || Box::new(NASAM.compile()) },
