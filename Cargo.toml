@@ -3,11 +3,20 @@ name = "xsmtest"
 version = "0.1.0"
 edition = "2024"
 
+[lib]
+name = "xsmtest"
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "xsmtest"
+path = "src/main.rs"
+
 [dependencies]
 clap = { version = "4", features = ["derive"] }
 cranelift = "0.132.0"
 cranelift-codegen = "0.132.0"
 cranelift-jit = "0.132.0"
 cranelift-module = "0.132.0"
+pyo3 = "0.28.3"
 rayon = "1.12.0"
 z3 = "0.20.0"

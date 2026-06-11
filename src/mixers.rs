@@ -269,7 +269,7 @@ impl OpListMixer for PadRotPi {
 
 // Pelle Evensen's NASAM, from
 // https://mostlymangling.blogspot.com/2020/01/nasam-not-another-strange-acronym-mixer.html
-struct NASAM;
+pub struct NASAM;
 impl OpListMixer for NASAM {
     fn build(&self, x: &mut OpListBuilder) {
         const M1: u64 = 0x9e6c63d0676a9a99;

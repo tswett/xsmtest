@@ -272,6 +272,7 @@ impl OpListBuilder {
     }
 }
 
+#[derive(Clone, Copy)]
 pub struct CompiledMixer {
     function: extern "C" fn(u64) -> u64,
 }
