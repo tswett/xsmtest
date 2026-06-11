@@ -28,8 +28,7 @@ use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{FuncId, Linkage, Module};
 use std::fmt::{Display, Error, Formatter};
 
-pub trait MixerOp {
-    #[allow(dead_code)]
+pub trait MixerOp: Display + Send + Sync {
     fn eval(&self, x: u64) -> u64;
 
     fn compile(&self, func_builder: &mut FunctionBuilder, input: Value) -> Value;
@@ -72,6 +71,12 @@ impl MultiplyOp {
     }
 }
 
+impl Display for MultiplyOp {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
+        write!(f, "multiply(0x{:016x})", self.multiplier)
+    }
+}
+
 impl MixerOp for MultiplyOp {
     fn eval(&self, x: u64) -> u64 {
         x.wrapping_mul(self.multiplier)
@@ -101,6 +106,17 @@ impl XorshiftRightOp {
 
     pub fn new_single(offset: i32) -> Result<Self, ParameterError> {
         Self::new(vec!(offset))
+    }
+}
+
+impl Display for XorshiftRightOp {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
+        write!(f, "xorshift_right(")?;
+        for (i, offset) in self.offsets.iter().enumerate() {
+            if i > 0 { write!(f, ", ")?; }
+            write!(f, "{}", offset)?;
+        }
+        write!(f, ")")
     }
 }
 
@@ -145,6 +161,17 @@ impl XorshiftLeftOp {
     }
 }
 
+impl Display for XorshiftLeftOp {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
+        write!(f, "xorshift_left(")?;
+        for (i, offset) in self.offsets.iter().enumerate() {
+            if i > 0 { write!(f, ", ")?; }
+            write!(f, "{}", offset)?;
+        }
+        write!(f, ")")
+    }
+}
+
 impl MixerOp for XorshiftLeftOp {
     fn eval(&self, x: u64) -> u64 {
         let mut result = x;
@@ -186,25 +213,14 @@ impl XorrotateRightOp {
     }
 }
 
-pub struct XorOp {
-    pad: u64,
-}
-
-impl XorOp {
-    pub fn new(pad: u64) -> Self {
-        XorOp { pad }
-    }
-}
-
-impl MixerOp for XorOp {
-    fn eval(&self, x: u64) -> u64 {
-        x ^ self.pad
-    }
-
-    fn compile(&self, func_builder: &mut FunctionBuilder, input: Value)
-        -> Value
-    {
-        func_builder.ins().bxor_imm(input, self.pad as i64)
+impl Display for XorrotateRightOp {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
+        write!(f, "xorrotate_right(")?;
+        for (i, offset) in self.offsets.iter().enumerate() {
+            if i > 0 { write!(f, ", ")?; }
+            write!(f, "{}", offset)?;
+        }
+        write!(f, ")")
     }
 }
 
@@ -212,7 +228,7 @@ impl MixerOp for XorrotateRightOp {
     fn eval(&self, x: u64) -> u64 {
         let mut result = x;
         for offset in &self.offsets {
-            result &= x.rotate_right(*offset as u32);
+            result ^= x.rotate_right(*offset as u32);
         }
         result
     }
@@ -226,6 +242,34 @@ impl MixerOp for XorrotateRightOp {
             result = func_builder.ins().bxor(result, shifted);
         }
         result
+    }
+}
+
+pub struct XorOp {
+    pad: u64,
+}
+
+impl XorOp {
+    pub fn new(pad: u64) -> Self {
+        XorOp { pad }
+    }
+}
+
+impl Display for XorOp {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
+        write!(f, "xor(0x{:016x})", self.pad)
+    }
+}
+
+impl MixerOp for XorOp {
+    fn eval(&self, x: u64) -> u64 {
+        x ^ self.pad
+    }
+
+    fn compile(&self, func_builder: &mut FunctionBuilder, input: Value)
+        -> Value
+    {
+        func_builder.ins().bxor_imm(input, self.pad as i64)
     }
 }
 
@@ -283,7 +327,7 @@ impl CompiledMixer {
     }
 }
 
-pub trait OpListMixer: Sync {
+pub trait OpListMixer: Send + Sync {
     fn build(&self, x: &mut OpListBuilder);
 
     fn operations(&self) -> Vec<Box<dyn MixerOp>> {

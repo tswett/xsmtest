@@ -43,7 +43,7 @@ impl Mixer for CompiledMixer {
 }
 
 // A totally trivial mixing function that literally does nothing.
-struct Trivial;
+pub struct Trivial;
 impl OpListMixer for Trivial {
     fn build(&self, _x: &mut OpListBuilder) { }
 }
@@ -160,7 +160,7 @@ impl OpListMixer for DecentPi {
 
 // The venerable finalizer from MurmurHash3 (fmix64), taken from
 // https://github.com/aappleby/smhasher/blob/master/src/MurmurHash3.cpp
-struct MurmurHash3;
+pub struct MurmurHash3;
 impl OpListMixer for MurmurHash3 {
     fn build(&self, x: &mut OpListBuilder) {
         const M1: u64 = 0xff51afd7ed558ccd;
