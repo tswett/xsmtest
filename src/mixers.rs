@@ -18,7 +18,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-use crate::oplistmixer::{CompiledMixer, MixerDef, OpListBuilder};
+use crate::oplistmixer::{Mixer, MixerDef, OpListBuilder};
 
 // Multiplicative inverse
 #[allow(dead_code)]
@@ -30,16 +30,6 @@ fn mulinv(x: u64) -> u64 {
     }
 
     inv
-}
-
-pub trait Mixer: Sync {
-    fn mix(&self, x: u64) -> u64;
-}
-
-impl Mixer for CompiledMixer {
-    fn mix(&self, x: u64) -> u64 {
-        self.call(x)
-    }
 }
 
 // A totally trivial mixing function that literally does nothing.
@@ -293,53 +283,54 @@ pub fn double_nasam(mut x: u64) -> u64 {
     x
 }
 
-struct DoubleNasam;
-impl Mixer for DoubleNasam {
-    fn mix(&self, x: u64) -> u64 {
-        double_nasam(x)
+struct PreXorPi {
+    inner: Box<dyn MixerDef>,
+}
+impl MixerDef for PreXorPi {
+    fn build(&self, x: &mut OpListBuilder) {
+        x.xor(PI64);
+
+        self.inner.build(x);
     }
 }
 
-struct PreXorPi<M: Mixer> {
-    inner: M,
-}
-impl<M: Mixer> Mixer for PreXorPi<M> {
-    fn mix(&self, x: u64) -> u64 {
-        self.inner.mix(x ^ PI64)
-    }
-}
-
+// TODO: get rid of this; make a MixerDef know its own name instead
 pub struct MixerInfo<'a> {
     pub name: &'a str,
-    pub func: fn() -> Box<dyn Mixer>,
+    pub func: fn() -> Box<dyn MixerDef>,
+}
+
+impl<'a> MixerInfo<'a> {
+    pub fn compile(&self) -> Mixer {
+        (self.func)().compile()
+    }
 }
 
 pub const MIXERS: &[MixerInfo] = &[
-    MixerInfo { name: "trivial", func: || Box::new(Trivial.compile()) },
-    MixerInfo { name: "fake_ava", func: || Box::new(FakeAva.compile()) },
-    MixerInfo { name: "deluxe_fake_ava", func: || Box::new(DeluxeFakeAva.compile()) },
-    MixerInfo { name: "terrible_pi", func: || Box::new(TerriblePi.compile()) },
-    MixerInfo { name: "lousy_pi", func: || Box::new(LousyPi.compile()) },
-    MixerInfo { name: "mutashuffle", func: || Box::new(MutaShuffle.compile()) },
-    MixerInfo { name: "easynut", func: || Box::new(EasyNut.compile()) },
-    MixerInfo { name: "decent_pi", func: || Box::new(DecentPi.compile()) },
-    MixerInfo { name: "murmurhash3", func: || Box::new(MurmurHash3.compile()) },
+    MixerInfo { name: "trivial", func: || Box::new(Trivial) },
+    MixerInfo { name: "fake_ava", func: || Box::new(FakeAva) },
+    MixerInfo { name: "deluxe_fake_ava", func: || Box::new(DeluxeFakeAva) },
+    MixerInfo { name: "terrible_pi", func: || Box::new(TerriblePi) },
+    MixerInfo { name: "lousy_pi", func: || Box::new(LousyPi) },
+    MixerInfo { name: "mutashuffle", func: || Box::new(MutaShuffle) },
+    MixerInfo { name: "easynut", func: || Box::new(EasyNut) },
+    MixerInfo { name: "decent_pi", func: || Box::new(DecentPi) },
+    MixerInfo { name: "murmurhash3", func: || Box::new(MurmurHash3) },
     MixerInfo {
         name: "extended_murmurhash3:3",
-        func: || Box::new(ExtendedMurmurHash3 { rounds: 3 }.compile())
+        func: || Box::new(ExtendedMurmurHash3 { rounds: 3 })
     },
     MixerInfo {
         name: "prexorpi:murmurhash3",
-        func: || Box::new(PreXorPi { inner: MurmurHash3.compile() })
+        func: || Box::new(PreXorPi { inner: Box::new(MurmurHash3) })
     },
-    MixerInfo { name: "mix13", func: || Box::new(Mix13.compile()) },
-    MixerInfo { name: "moremur", func: || Box::new(Moremur.compile()) },
-    MixerInfo { name: "rotatory_pi", func: || Box::new(RotatoryPi.compile()) },
-    MixerInfo { name: "padrot_pi", func: || Box::new(PadRotPi.compile()) },
-    MixerInfo { name: "nasam", func: || Box::new(NASAM.compile()) },
-    MixerInfo { name: "double_nasam", func: || Box::new(DoubleNasam) },
+    MixerInfo { name: "mix13", func: || Box::new(Mix13) },
+    MixerInfo { name: "moremur", func: || Box::new(Moremur) },
+    MixerInfo { name: "rotatory_pi", func: || Box::new(RotatoryPi) },
+    MixerInfo { name: "padrot_pi", func: || Box::new(PadRotPi) },
+    MixerInfo { name: "nasam", func: || Box::new(NASAM) },
     MixerInfo {
         name: "prexorpi:nasam",
-        func: || Box::new(PreXorPi { inner: NASAM.compile() })
+        func: || Box::new(PreXorPi { inner: Box::new(NASAM) })
     },
 ];

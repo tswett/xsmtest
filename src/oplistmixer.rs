@@ -367,12 +367,12 @@ impl OpListBuilder {
 }
 
 #[derive(Clone, Copy)]
-pub struct CompiledMixer {
+pub struct Mixer {
     function: extern "C" fn(u64) -> u64,
 }
 
-impl CompiledMixer {
-    pub fn call(&self, x: u64) -> u64 {
+impl Mixer {
+    pub fn mix(&self, x: u64) -> u64 {
         (self.function)(x)
     }
 }
@@ -386,7 +386,7 @@ pub trait MixerDef: Send + Sync {
         builder.op_list
     }
 
-    fn compile(&self) -> CompiledMixer {
+    fn compile(&self) -> Mixer {
         let builder: JITBuilder =
             JITBuilder::new(cranelift_module::default_libcall_names()).unwrap();
         let mut module = JITModule::new(builder);
@@ -424,7 +424,7 @@ pub trait MixerDef: Send + Sync {
 
         let code_ptr: *const u8 = module.get_finalized_function(func_id);
 
-        CompiledMixer {
+        Mixer {
             function: unsafe { std::mem::transmute(code_ptr) },
         }
     }

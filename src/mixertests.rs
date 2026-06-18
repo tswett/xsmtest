@@ -22,7 +22,7 @@ use clap::ValueEnum;
 use rayon::iter::{ParallelBridge, ParallelIterator};
 use std::ops::{Add, AddAssign, Range};
 
-use crate::mixers::Mixer;
+use crate::oplistmixer::Mixer;
 use crate::prng::PRNG;
 
 #[derive(Clone, Copy, Default)]
@@ -94,7 +94,7 @@ pub struct MixerTestContext<'a> {
     pub prng: PRNG,
 
     pub name: &'a str,
-    pub mixer: &'a dyn Mixer,
+    pub mixer: &'a Mixer,
 
     pub samples: u64,
 }
@@ -147,7 +147,7 @@ pub struct Avalanche;
 
 impl Avalanche {
     fn test_inner(
-        mut prng: PRNG, mixer: &dyn Mixer, samples: u64, bit_range: Range<i32>)
+        mut prng: PRNG, mixer: &Mixer, samples: u64, bit_range: Range<i32>)
         -> RawStats
     {
         let mut stats = RawStats::default();
@@ -313,7 +313,7 @@ struct SACalcStats {
 pub struct StrictAvalanche;
 
 impl StrictAvalanche {
-    fn test_inner(mut prng: PRNG, mixer: &dyn Mixer, samples: u64)
+    fn test_inner(mut prng: PRNG, mixer: &Mixer, samples: u64)
         -> SARawStats
     {
         let mut stats = SARawStats::default();

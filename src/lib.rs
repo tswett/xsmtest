@@ -66,7 +66,7 @@ pub fn run() {
             test.run_test(MixerTestContext {
                 prng: prng.get_prng(),
                 name: m.name,
-                mixer: &*(m.func)(),
+                mixer: &m.compile(),
                 samples: args.samples
             })
         }
@@ -75,7 +75,7 @@ pub fn run() {
             Some(m) => test.run_test(MixerTestContext {
                 prng: prng.get_prng(),
                 name: m.name,
-                mixer: &*(m.func)(),
+                mixer: &m.compile(),
                 samples: args.samples
             }),
             None => panic!("Unknown mixer: {}", args.mixer),

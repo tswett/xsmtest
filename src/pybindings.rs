@@ -24,23 +24,23 @@ use pyo3::prelude::pymodule;
 mod xsmtest {
     use pyo3::prelude::*;
 
-    use crate::oplistmixer::{CompiledMixer, MixerDef, MixerOp};
+    use crate::oplistmixer::{Mixer, MixerDef, MixerOp};
 
     #[pyclass(name = "MixerDef")]
     struct PyMixerDef {
         inner: Box<dyn MixerDef>,
-        compiled: Option<CompiledMixer>,
+        compiled: Option<Mixer>,
     }
 
     #[pymethods]
     impl PyMixerDef {
         fn __call__(&mut self, x: u64) -> u64 {
             match self.compiled {
-                Some(f) => f.call(x),
+                Some(f) => f.mix(x),
                 None => {
-                    let f: CompiledMixer = self.inner.compile();
+                    let f: Mixer = self.inner.compile();
                     self.compiled = Some(f);
-                    f.call(x)
+                    f.mix(x)
                 }
             }
         }
