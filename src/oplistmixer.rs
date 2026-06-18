@@ -39,6 +39,7 @@ pub enum ParameterError {
     MultiplierError { multiplier: u64 },
     OffsetError { offset: i32 },
     RotateCountError { count: usize },
+    GatePadError { gate: u64, pad: u64 },
 }
 
 impl Display for ParameterError {
@@ -53,6 +54,11 @@ impl Display for ParameterError {
             ParameterError::RotateCountError { count } => write!(f,
                 "invalid number of offsets: expected an even number of offsets but there are {} here",
                 count),
+            ParameterError::GatePadError { gate, pad } => write!(f,
+                "invalid gate and pad: the gate ({:016x}) and the pad ({:016x}) should have an even number of bits in common but they actually have {}",
+                gate,
+                pad,
+                (gate & pad).count_ones()),
         }
     }
 }
@@ -273,6 +279,45 @@ impl MixerOp for XorOp {
     }
 }
 
+pub struct GatedXorOp {
+    gate: u64,
+    pad: u64,
+}
+
+impl GatedXorOp {
+    pub fn new(gate: u64, pad: u64) -> Result<Self, ParameterError> {
+        if (gate & pad).count_ones() % 2 != 0 {
+            return Err(ParameterError::GatePadError { gate, pad })
+        }
+
+        Ok(GatedXorOp { gate, pad })
+    }
+}
+
+impl Display for GatedXorOp {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
+        write!(f, "gated_xor(0x{:016x}, 0x{:016x})", self.gate, self.pad)
+    }
+}
+
+impl MixerOp for GatedXorOp {
+    fn eval(&self, x: u64) -> u64 {
+        if (x & self.gate).count_ones() % 2 == 1 { x ^ self.pad } else { x }
+    }
+
+    fn compile(&self, func_builder: &mut FunctionBuilder, input: Value)
+        -> Value
+    {
+        let masked = func_builder.ins().band_imm(input, self.gate as i64);
+        let popcount = func_builder.ins().popcnt(masked);
+        let parity = func_builder.ins().band_imm(popcount, 1);
+
+        let xored = func_builder.ins().bxor_imm(input, self.pad as i64);
+
+        func_builder.ins().select(parity, xored, input)
+    }
+}
+
 #[derive(Default)]
 pub struct OpListBuilder {
     op_list: Vec<Box<dyn MixerOp>>,
@@ -314,6 +359,11 @@ impl OpListBuilder {
         self.op_list.push(Box::new(
             MultiplyOp::new(multiplier).unwrap()));
     }
+
+    pub fn gated_xor(&mut self, gate: u64, pad: u64) {
+        self.op_list.push(Box::new(
+            GatedXorOp::new(gate, pad).unwrap()));
+    }
 }
 
 #[derive(Clone, Copy)]
@@ -327,7 +377,7 @@ impl CompiledMixer {
     }
 }
 
-pub trait OpListMixer: Send + Sync {
+pub trait MixerDef: Send + Sync {
     fn build(&self, x: &mut OpListBuilder);
 
     fn operations(&self) -> Vec<Box<dyn MixerOp>> {

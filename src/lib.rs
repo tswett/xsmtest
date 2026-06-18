@@ -18,8 +18,67 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-pub mod mixers;
-pub mod mixertests;
-pub mod oplistmixer;
-pub mod prng;
-pub mod pybindings;
+mod mixers;
+mod mixertests;
+mod oplistmixer;
+mod prng;
+mod pybindings;
+
+use clap::Parser;
+
+use mixertests::{
+    Avalanche, AvalancheBitwise, MixerTest, MixerTestContext,
+    Powers, Shift, StrictAvalanche, TestType, Z3,
+};
+use prng::PRNG;
+
+#[derive(Parser)]
+struct Args {
+    #[arg(long, default_value_t = 200000)]
+    samples: u64,
+
+    #[arg(long, default_value = "all")]
+    mixer: String,
+
+    #[arg(long, value_enum, default_value_t = TestType::Avalanche)]
+    test: TestType,
+
+    #[arg(long, default_value_t = 0)]
+    seed: u64,
+}
+
+pub fn run() {
+    let args = Args::parse();
+
+    let mut prng = PRNG::from_seed(args.seed);
+
+    let test: &dyn MixerTest = match args.test {
+        TestType::Avalanche => &Avalanche,
+        TestType::AvalancheBitwise => &AvalancheBitwise,
+        TestType::Powers => &Powers,
+        TestType::Shift => &Shift,
+        TestType::StrictAvalanche => &StrictAvalanche,
+        TestType::Z3 => &Z3,
+    };
+
+    if args.mixer == "all" {
+        for m in mixers::MIXERS {
+            test.run_test(MixerTestContext {
+                prng: prng.get_prng(),
+                name: m.name,
+                mixer: &*(m.func)(),
+                samples: args.samples
+            })
+        }
+    } else {
+        match mixers::MIXERS.iter().find(|m| m.name == args.mixer) {
+            Some(m) => test.run_test(MixerTestContext {
+                prng: prng.get_prng(),
+                name: m.name,
+                mixer: &*(m.func)(),
+                samples: args.samples
+            }),
+            None => panic!("Unknown mixer: {}", args.mixer),
+        }
+    }
+}

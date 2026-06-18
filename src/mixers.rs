@@ -18,7 +18,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-use crate::oplistmixer::{CompiledMixer, OpListBuilder, OpListMixer};
+use crate::oplistmixer::{CompiledMixer, MixerDef, OpListBuilder};
 
 // Multiplicative inverse
 #[allow(dead_code)]
@@ -44,20 +44,16 @@ impl Mixer for CompiledMixer {
 
 // A totally trivial mixing function that literally does nothing.
 pub struct Trivial;
-impl OpListMixer for Trivial {
+impl MixerDef for Trivial {
     fn build(&self, _x: &mut OpListBuilder) { }
 }
 
 // An atrocious mixing function which gets the mean Hamming distance right, but
 // doesn't actually mix anything.
 struct FakeAva;
-impl Mixer for FakeAva {
-    fn mix(&self, x: u64) -> u64 {
-        if (x >> 32).count_ones() % 2 == 1 {
-            !x
-        } else {
-            x
-        }
+impl MixerDef for FakeAva {
+    fn build(&self, x: &mut OpListBuilder) {
+        x.gated_xor(0xffffffff_00000000, 0xffffffff_ffffffff);
     }
 }
 
@@ -75,19 +71,11 @@ impl Mixer for FakeAva {
 // This causes this "mixer" to get the mean and standard deviation correct on
 // the nose (which is _better_ than a real mixer would perform).
 struct DeluxeFakeAva;
-impl Mixer for DeluxeFakeAva {
-    fn mix(&self, mut x: u64) -> u64 {
-        if x.count_ones() % 2 == 1 {
-            x ^= 0x00000000_ffffffff;
-        }
-        if (x & 0x00000000_fffff000).count_ones() % 2 == 1 {
-            x ^= 0x00000000_0000000f;
-        }
-        if (x & 0x000fffff_00000000).count_ones() % 2 == 1 {
-            x ^= 0xf0000000_00000000;
-        }
-
-        x
+impl MixerDef for DeluxeFakeAva {
+    fn build(&self, x: &mut OpListBuilder) {
+        x.gated_xor(0xffffffff_ffffffff, 0x00000000_ffffffff);
+        x.gated_xor(0x00000000_fffff000, 0x00000000_0000000f);
+        x.gated_xor(0x000fffff_00000000, 0xf0000000_00000000);
     }
 }
 
@@ -96,7 +84,7 @@ const PI64: u64 = 0x3243f6a8885a308d;
 
 // This gives us some avalanching, but not much.
 struct TerriblePi;
-impl OpListMixer for TerriblePi {
+impl MixerDef for TerriblePi {
     fn build(&self, x: &mut OpListBuilder) {
         x.multiply(PI64);
     }
@@ -104,7 +92,7 @@ impl OpListMixer for TerriblePi {
 
 // A little bit more avalanching, but not enough.
 struct LousyPi;
-impl OpListMixer for LousyPi {
+impl MixerDef for LousyPi {
     fn build(&self, x: &mut OpListBuilder) {
         x.multiply(PI64);
         x.xorshift_right(32);
@@ -115,7 +103,7 @@ impl OpListMixer for LousyPi {
 
 // A shift-only mixer created entirely via mutation testing.
 struct MutaShuffle;
-impl OpListMixer for MutaShuffle {
+impl MixerDef for MutaShuffle {
     fn build(&self, x: &mut OpListBuilder) {
         x.xorshift_right(1);
         x.xorshift_left(2);
@@ -136,7 +124,7 @@ impl OpListMixer for MutaShuffle {
 
 // A terrible mixer that should be easy to automatically analyze.
 struct EasyNut;
-impl OpListMixer for EasyNut {
+impl MixerDef for EasyNut {
     fn build(&self, x: &mut OpListBuilder) {
         x.multiply(19);
         x.xorshift_right(1);
@@ -146,7 +134,7 @@ impl OpListMixer for EasyNut {
 }
 
 struct DecentPi;
-impl OpListMixer for DecentPi {
+impl MixerDef for DecentPi {
     fn build(&self, x: &mut OpListBuilder) {
         x.xorshift_right(32);
 
@@ -161,7 +149,7 @@ impl OpListMixer for DecentPi {
 // The venerable finalizer from MurmurHash3 (fmix64), taken from
 // https://github.com/aappleby/smhasher/blob/master/src/MurmurHash3.cpp
 pub struct MurmurHash3;
-impl OpListMixer for MurmurHash3 {
+impl MixerDef for MurmurHash3 {
     fn build(&self, x: &mut OpListBuilder) {
         const M1: u64 = 0xff51afd7ed558ccd;
         const M2: u64 = 0xc4ceb9fe1a85ec53;
@@ -179,7 +167,7 @@ impl OpListMixer for MurmurHash3 {
 struct ExtendedMurmurHash3 {
     rounds: u32,
 }
-impl OpListMixer for ExtendedMurmurHash3 {
+impl MixerDef for ExtendedMurmurHash3 {
     fn build(&self, x: &mut OpListBuilder) {
         const M1: u64 = 0xff51afd7ed558ccd;
         const M2: u64 = 0xc4ceb9fe1a85ec53;
@@ -204,7 +192,7 @@ impl OpListMixer for ExtendedMurmurHash3 {
 // This design is occasionally misattributed to Sebastiano Vigna, who did not
 // design it and has never claimed to have designed it.
 struct Mix13;
-impl OpListMixer for Mix13 {
+impl MixerDef for Mix13 {
     fn build(&self, x: &mut OpListBuilder) {
         const M1: u64 = 0xbf58476d1ce4e5b9;
         const M2: u64 = 0x94d049bb133111eb;
@@ -222,7 +210,7 @@ impl OpListMixer for Mix13 {
 // Pelle Evensen's Moremur, from
 // https://mostlymangling.blogspot.com/2019/12/stronger-better-morer-moremur-better.html
 struct Moremur;
-impl OpListMixer for Moremur {
+impl MixerDef for Moremur {
     fn build(&self, x: &mut OpListBuilder) {
         const M1: u64 = 0x3c79ac492ba7b653;
         const M2: u64 = 0x1c69b3f74ac4ae35;
@@ -238,7 +226,7 @@ impl OpListMixer for Moremur {
 }
 
 struct RotatoryPi;
-impl OpListMixer for RotatoryPi {
+impl MixerDef for RotatoryPi {
     fn build(&self, x: &mut OpListBuilder) {
         x.xorrotate_right_m(vec!(21, 43));
 
@@ -251,7 +239,7 @@ impl OpListMixer for RotatoryPi {
 }
 
 struct PadRotPi;
-impl OpListMixer for PadRotPi {
+impl MixerDef for PadRotPi {
     fn build(&self, x: &mut OpListBuilder) {
         x.xor(PI64);
 
@@ -270,7 +258,7 @@ impl OpListMixer for PadRotPi {
 // Pelle Evensen's NASAM, from
 // https://mostlymangling.blogspot.com/2020/01/nasam-not-another-strange-acronym-mixer.html
 pub struct NASAM;
-impl OpListMixer for NASAM {
+impl MixerDef for NASAM {
     fn build(&self, x: &mut OpListBuilder) {
         const M1: u64 = 0x9e6c63d0676a9a99;
         const M2: u64 = 0x9e6d62d06f6a9a9b;
@@ -328,8 +316,8 @@ pub struct MixerInfo<'a> {
 
 pub const MIXERS: &[MixerInfo] = &[
     MixerInfo { name: "trivial", func: || Box::new(Trivial.compile()) },
-    MixerInfo { name: "fake_ava", func: || Box::new(FakeAva) },
-    MixerInfo { name: "deluxe_fake_ava", func: || Box::new(DeluxeFakeAva) },
+    MixerInfo { name: "fake_ava", func: || Box::new(FakeAva.compile()) },
+    MixerInfo { name: "deluxe_fake_ava", func: || Box::new(DeluxeFakeAva.compile()) },
     MixerInfo { name: "terrible_pi", func: || Box::new(TerriblePi.compile()) },
     MixerInfo { name: "lousy_pi", func: || Box::new(LousyPi.compile()) },
     MixerInfo { name: "mutashuffle", func: || Box::new(MutaShuffle.compile()) },

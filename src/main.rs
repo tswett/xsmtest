@@ -18,62 +18,8 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-use clap::Parser;
-
-use xsmtest::mixers;
-use xsmtest::mixertests::{
-    Avalanche, AvalancheBitwise, MixerTest, MixerTestContext,
-    Powers, Shift, StrictAvalanche, TestType, Z3,
-};
-use xsmtest::prng::PRNG;
-
-#[derive(Parser)]
-struct Args {
-    #[arg(long, default_value_t = 200000)]
-    samples: u64,
-
-    #[arg(long, default_value = "all")]
-    mixer: String,
-
-    #[arg(long, value_enum, default_value_t = TestType::Avalanche)]
-    test: TestType,
-
-    #[arg(long, default_value_t = 0)]
-    seed: u64,
-}
+use xsmtest::run;
 
 fn main() {
-    let args = Args::parse();
-
-    let mut prng = PRNG::from_seed(args.seed);
-
-    let test: &dyn MixerTest = match args.test {
-        TestType::Avalanche => &Avalanche,
-        TestType::AvalancheBitwise => &AvalancheBitwise,
-        TestType::Powers => &Powers,
-        TestType::Shift => &Shift,
-        TestType::StrictAvalanche => &StrictAvalanche,
-        TestType::Z3 => &Z3,
-    };
-
-    if args.mixer == "all" {
-        for m in mixers::MIXERS {
-            test.run_test(MixerTestContext {
-                prng: prng.get_prng(),
-                name: m.name,
-                mixer: &*(m.func)(),
-                samples: args.samples
-            })
-        }
-    } else {
-        match mixers::MIXERS.iter().find(|m| m.name == args.mixer) {
-            Some(m) => test.run_test(MixerTestContext {
-                prng: prng.get_prng(),
-                name: m.name,
-                mixer: &*(m.func)(),
-                samples: args.samples
-            }),
-            None => panic!("Unknown mixer: {}", args.mixer),
-        }
-    }
+    run()
 }

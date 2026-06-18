@@ -24,16 +24,16 @@ use pyo3::prelude::pymodule;
 mod xsmtest {
     use pyo3::prelude::*;
 
-    use crate::oplistmixer::{CompiledMixer, MixerOp, OpListMixer};
+    use crate::oplistmixer::{CompiledMixer, MixerDef, MixerOp};
 
-    #[pyclass(name = "OpListMixer")]
-    struct PyOpListMixer {
-        inner: Box<dyn OpListMixer>,
+    #[pyclass(name = "MixerDef")]
+    struct PyMixerDef {
+        inner: Box<dyn MixerDef>,
         compiled: Option<CompiledMixer>,
     }
 
     #[pymethods]
-    impl PyOpListMixer {
+    impl PyMixerDef {
         fn __call__(&mut self, x: u64) -> u64 {
             match self.compiled {
                 Some(f) => f.call(x),
@@ -54,8 +54,8 @@ mod xsmtest {
         }
     }
 
-    impl PyOpListMixer {
-        fn new(inner: impl OpListMixer + 'static) -> Self {
+    impl PyMixerDef {
+        fn new(inner: impl MixerDef + 'static) -> Self {
             Self { inner: Box::new(inner), compiled: None }
         }
     }
@@ -81,13 +81,13 @@ mod xsmtest {
         use pyo3::prelude::*;
 
         use crate::mixers::{MurmurHash3, NASAM, Trivial};
-        use crate::pybindings::xsmtest::PyOpListMixer;
+        use crate::pybindings::xsmtest::PyMixerDef;
 
         #[pymodule_init]
         fn init(m: &Bound<'_, PyModule>) -> PyResult<()> {
-            m.add("trivial", PyOpListMixer::new(Trivial))?;
-            m.add("murmurhash3", PyOpListMixer::new(MurmurHash3))?;
-            m.add("nasam", PyOpListMixer::new(NASAM))?;
+            m.add("trivial", PyMixerDef::new(Trivial))?;
+            m.add("murmurhash3", PyMixerDef::new(MurmurHash3))?;
+            m.add("nasam", PyMixerDef::new(NASAM))?;
             Ok(())
         }
     }
