@@ -20,6 +20,7 @@
 
 use clap::ValueEnum;
 use rayon::iter::{ParallelBridge, ParallelIterator};
+use pyo3::prelude::pymodule;
 use std::ops::{Add, AddAssign, Range};
 
 use crate::oplistmixer::Mixer;
@@ -89,6 +90,9 @@ struct SampleStats {
     mean_z: f64,
     stddev_z: f64
 }
+
+pub const DEFAULT_SAMPLES: u64 = 200000;
+pub const DEFAULT_SEED: u64 = 0;
 
 pub struct MixerTestContext<'a> {
     pub prng: PRNG,
@@ -513,4 +517,32 @@ pub enum TestType {
     Shift,
     StrictAvalanche,
     Z3,
+}
+
+fn run_avalanche_helper(mixer: Mixer, seed: u64, samples: u64) {
+    let ctx = MixerTestContext {
+        prng: PRNG::from_seed(seed),
+        name: "this mixer",
+        mixer: &mixer,
+        samples,
+    };
+
+    Avalanche.run_test(ctx);
+}
+
+#[pymodule(name = "mixertests", module = "xsmtest")]
+pub mod py_mixertests {
+    use pyo3::prelude::pyfunction;
+
+    use crate::oplistmixer::PyMixerDef;
+
+    use crate::mixertests::{
+        DEFAULT_SAMPLES, DEFAULT_SEED, run_avalanche_helper,
+    };
+
+    #[pyfunction]
+    #[pyo3(signature = (mixer, seed=DEFAULT_SEED, samples=DEFAULT_SAMPLES))]
+    fn run_avalanche(mixer: &mut PyMixerDef, seed: u64, samples: u64) {
+        run_avalanche_helper(mixer.compile(), seed, samples);
+    }
 }

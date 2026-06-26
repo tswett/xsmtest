@@ -26,6 +26,7 @@ use cranelift_codegen::Context;
 use cranelift_codegen::ir::types::I64;
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{FuncId, Linkage, Module};
+use pyo3::prelude::pymodule;
 use std::fmt::{Display, Error, Formatter};
 
 pub trait MixerOp: Display + Send + Sync {
@@ -429,3 +430,59 @@ pub trait MixerDef: Send + Sync {
         }
     }
 }
+
+#[pymodule(name = "mixer", module = "xsmtest")]
+pub mod py_mixer {
+    use pyo3::prelude::{pyclass, pymethods};
+
+    use crate::oplistmixer::{Mixer, MixerDef, MixerOp};
+
+    #[pyclass(name = "MixerOp")]
+    struct PyMixerOp {
+        inner: Box<dyn MixerOp>,
+    }
+
+    #[pymethods]
+    impl PyMixerOp {
+        fn __call__(&self, x: u64) -> u64 {
+            self.inner.eval(x)
+        }
+
+        fn __repr__(&self) -> String {
+            self.inner.to_string()
+        }
+    }
+
+    #[pyclass(name = "MixerDef")]
+    pub struct PyMixerDef {
+        inner: Box<dyn MixerDef>,
+        compiled: Option<Mixer>,
+    }
+
+    #[pymethods]
+    impl PyMixerDef {
+        fn __call__(&mut self, x: u64) -> u64 {
+            self.compile().mix(x)
+        }
+
+        #[getter]
+        fn operations(&self) -> Vec<PyMixerOp> {
+            self.inner.operations()
+                .into_iter()
+                .map(|op| PyMixerOp { inner: op })
+                .collect()
+        }
+    }
+
+    impl PyMixerDef {
+        pub fn new(inner: impl MixerDef + 'static) -> Self {
+            Self { inner: Box::new(inner), compiled: None }
+        }
+
+        pub fn compile(&mut self) -> Mixer {
+            *self.compiled.get_or_insert_with(|| self.inner.compile())
+        }
+    }
+}
+
+pub use py_mixer::PyMixerDef;

@@ -27,14 +27,14 @@ mod pybindings;
 use clap::Parser;
 
 use mixertests::{
-    Avalanche, AvalancheBitwise, MixerTest, MixerTestContext,
-    Powers, Shift, StrictAvalanche, TestType, Z3,
+    Avalanche, AvalancheBitwise, DEFAULT_SAMPLES, DEFAULT_SEED, MixerTest,
+    MixerTestContext, Powers, Shift, StrictAvalanche, TestType, Z3,
 };
 use prng::PRNG;
 
 #[derive(Parser)]
 struct Args {
-    #[arg(long, default_value_t = 200000)]
+    #[arg(long, default_value_t = DEFAULT_SAMPLES)]
     samples: u64,
 
     #[arg(long, default_value = "all")]
@@ -43,7 +43,7 @@ struct Args {
     #[arg(long, value_enum, default_value_t = TestType::Avalanche)]
     test: TestType,
 
-    #[arg(long, default_value_t = 0)]
+    #[arg(long, default_value_t = DEFAULT_SEED)]
     seed: u64,
 }
 

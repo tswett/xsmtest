@@ -24,64 +24,18 @@ use pyo3::prelude::pymodule;
 mod xsmtest {
     use pyo3::prelude::*;
 
-    use crate::oplistmixer::{Mixer, MixerDef, MixerOp};
+    #[pymodule_export]
+    use crate::oplistmixer::py_mixer;
 
-    #[pyclass(name = "MixerDef")]
-    struct PyMixerDef {
-        inner: Box<dyn MixerDef>,
-        compiled: Option<Mixer>,
-    }
-
-    #[pymethods]
-    impl PyMixerDef {
-        fn __call__(&mut self, x: u64) -> u64 {
-            match self.compiled {
-                Some(f) => f.mix(x),
-                None => {
-                    let f: Mixer = self.inner.compile();
-                    self.compiled = Some(f);
-                    f.mix(x)
-                }
-            }
-        }
-
-        #[getter]
-        fn operations(&self) -> Vec<PyMixerOp> {
-            self.inner.operations()
-                .into_iter()
-                .map(|op| PyMixerOp { inner: op })
-                .collect()
-        }
-    }
-
-    impl PyMixerDef {
-        fn new(inner: impl MixerDef + 'static) -> Self {
-            Self { inner: Box::new(inner), compiled: None }
-        }
-    }
-
-    #[pyclass(name = "MixerOp")]
-    struct PyMixerOp {
-        inner: Box<dyn MixerOp>,
-    }
-
-    #[pymethods]
-    impl PyMixerOp {
-        fn __call__(&self, x: u64) -> u64 {
-            self.inner.eval(x)
-        }
-
-        fn __repr__(&self) -> String {
-            self.inner.to_string()
-        }
-    }
+    #[pymodule_export]
+    use crate::mixertests::py_mixertests;
 
     #[pymodule]
     mod mixers {
         use pyo3::prelude::*;
 
         use crate::mixers::{MurmurHash3, NASAM, Trivial};
-        use crate::pybindings::xsmtest::PyMixerDef;
+        use crate::oplistmixer::PyMixerDef;
 
         #[pymodule_init]
         fn init(m: &Bound<'_, PyModule>) -> PyResult<()> {
