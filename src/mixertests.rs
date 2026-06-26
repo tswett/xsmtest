@@ -519,30 +519,26 @@ pub enum TestType {
     Z3,
 }
 
-fn run_avalanche_helper(mixer: Mixer, seed: u64, samples: u64) {
-    let ctx = MixerTestContext {
-        prng: PRNG::from_seed(seed),
-        name: "this mixer",
-        mixer: &mixer,
-        samples,
-    };
-
-    Avalanche.run_test(ctx);
-}
-
 #[pymodule(name = "mixertests", module = "xsmtest")]
 pub mod py_mixertests {
     use pyo3::prelude::pyfunction;
 
     use crate::mixer::PyMixerDef;
-
-    use crate::mixertests::{
-        DEFAULT_SAMPLES, DEFAULT_SEED, run_avalanche_helper,
+    use crate::prng::PRNG;
+    use super::{
+        Avalanche, DEFAULT_SAMPLES, DEFAULT_SEED, MixerTestContext, MixerTest
     };
 
     #[pyfunction]
     #[pyo3(signature = (mixer, seed=DEFAULT_SEED, samples=DEFAULT_SAMPLES))]
     fn run_avalanche(mixer: &mut PyMixerDef, seed: u64, samples: u64) {
-        run_avalanche_helper(mixer.compile(), seed, samples);
+        let ctx = MixerTestContext {
+            prng: PRNG::from_seed(seed),
+            name: &mixer.name(),
+            mixer: &mixer.compile(),
+            samples,
+        };
+
+        Avalanche.run_test(ctx);
     }
 }

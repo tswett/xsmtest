@@ -378,7 +378,7 @@ impl Mixer {
     }
 }
 
-pub trait MixerDef: Send + Sync {
+pub trait MixerDef: Display + Send + Sync {
     fn build(&self, x: &mut OpListBuilder);
 
     fn operations(&self) -> Vec<Box<dyn MixerOp>> {
@@ -434,7 +434,6 @@ pub trait MixerDef: Send + Sync {
 #[pymodule(name = "mixer", module = "xsmtest")]
 pub mod py_mixer {
     use pyo3::prelude::{pyclass, pymethods};
-
     use crate::mixer::{Mixer, MixerDef, MixerOp};
 
     #[pyclass(name = "MixerOp")]
@@ -481,6 +480,10 @@ pub mod py_mixer {
 
         pub fn compile(&mut self) -> Mixer {
             *self.compiled.get_or_insert_with(|| self.inner.compile())
+        }
+
+        pub fn name(&self) -> String {
+            self.inner.to_string()
         }
     }
 }
