@@ -21,6 +21,7 @@
 mod mixer;
 mod mixers;
 mod mixertests;
+mod ops;
 mod prng;
 mod pybindings;
 mod run;

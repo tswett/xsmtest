@@ -21,7 +21,8 @@
 use pyo3::prelude::pymodule;
 use std::fmt::{Display, Formatter, Result};
 
-use crate::mixer::{MixerDef, OpListBuilder};
+use crate::mixer::MixerDef;
+use crate::ops::OpListBuilder;
 
 // Multiplicative inverse
 #[allow(dead_code)]
