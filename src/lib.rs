@@ -18,9 +18,9 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
+mod mixer;
 mod mixers;
 mod mixertests;
-mod oplistmixer;
 mod prng;
 mod pybindings;
 

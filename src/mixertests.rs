@@ -23,7 +23,7 @@ use rayon::iter::{ParallelBridge, ParallelIterator};
 use pyo3::prelude::pymodule;
 use std::ops::{Add, AddAssign, Range};
 
-use crate::oplistmixer::Mixer;
+use crate::mixer::Mixer;
 use crate::prng::PRNG;
 
 #[derive(Clone, Copy, Default)]
@@ -534,7 +534,7 @@ fn run_avalanche_helper(mixer: Mixer, seed: u64, samples: u64) {
 pub mod py_mixertests {
     use pyo3::prelude::pyfunction;
 
-    use crate::oplistmixer::PyMixerDef;
+    use crate::mixer::PyMixerDef;
 
     use crate::mixertests::{
         DEFAULT_SAMPLES, DEFAULT_SEED, run_avalanche_helper,

@@ -18,7 +18,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-use crate::oplistmixer::{Mixer, MixerDef, OpListBuilder};
+use crate::mixer::{Mixer, MixerDef, OpListBuilder};
 
 // Multiplicative inverse
 #[allow(dead_code)]

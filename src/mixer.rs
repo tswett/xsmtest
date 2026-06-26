@@ -435,7 +435,7 @@ pub trait MixerDef: Send + Sync {
 pub mod py_mixer {
     use pyo3::prelude::{pyclass, pymethods};
 
-    use crate::oplistmixer::{Mixer, MixerDef, MixerOp};
+    use crate::mixer::{Mixer, MixerDef, MixerOp};
 
     #[pyclass(name = "MixerOp")]
     struct PyMixerOp {
