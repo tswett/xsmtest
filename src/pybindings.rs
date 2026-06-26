@@ -22,27 +22,12 @@ use pyo3::prelude::pymodule;
 
 #[pymodule]
 mod xsmtest {
-    use pyo3::prelude::*;
-
     #[pymodule_export]
     use crate::mixer::py_mixer;
 
     #[pymodule_export]
     use crate::mixertests::py_mixertests;
 
-    #[pymodule]
-    mod mixers {
-        use pyo3::prelude::*;
-
-        use crate::mixers::{MurmurHash3, NASAM, Trivial};
-        use crate::mixer::PyMixerDef;
-
-        #[pymodule_init]
-        fn init(m: &Bound<'_, PyModule>) -> PyResult<()> {
-            m.add("trivial", PyMixerDef::new(Trivial))?;
-            m.add("murmurhash3", PyMixerDef::new(MurmurHash3))?;
-            m.add("nasam", PyMixerDef::new(NASAM))?;
-            Ok(())
-        }
-    }
+    #[pymodule_export]
+    use crate::mixers::py_mixers;
 }

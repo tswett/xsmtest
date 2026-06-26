@@ -18,6 +18,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
+use pyo3::prelude::pymodule;
 use std::fmt::{Display, Formatter, Result};
 
 use crate::mixer::{MixerDef, OpListBuilder};
@@ -428,4 +429,24 @@ pub fn get_mixers() -> Vec<Box<dyn MixerDef>> {
         Box::new(NASAM),
         Box::new(PreXorPi { inner: Box::new(NASAM) }),
     )
+}
+
+#[pymodule(name = "mixers", module = "xsmtest")]
+pub mod py_mixers {
+    use pyo3::prelude::{Bound, PyModule, PyResult};
+    use pyo3::types::PyModuleMethods;
+
+    use crate::mixer::PyMixerDef;
+    use super::get_mixers;
+
+    #[pymodule_init]
+    fn init(m: &Bound<'_, PyModule>) -> PyResult<()> {
+        for mixer in get_mixers() {
+            if !mixer.to_string().contains('(') {
+                m.add(mixer.to_string(), PyMixerDef::new(mixer))?;
+            }
+        }
+
+        Ok(())
+    }
 }

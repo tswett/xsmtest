@@ -433,7 +433,10 @@ pub trait MixerDef: Display + Send + Sync {
 
 #[pymodule(name = "mixer", module = "xsmtest")]
 pub mod py_mixer {
-    use pyo3::prelude::{pyclass, pymethods};
+    use pyo3::IntoPyObject;
+    use pyo3::prelude::{Bound, PyAny, pyclass, pymethods, PyResult, Python};
+    use pyo3::types::PyAnyMethods;
+
     use crate::mixer::{Mixer, MixerDef, MixerOp};
 
     #[pyclass(name = "MixerOp")]
@@ -464,6 +467,18 @@ pub mod py_mixer {
             self.compile().mix(x)
         }
 
+        fn __str__(&self) -> String {
+            self.inner.to_string()
+        }
+
+        fn __repr__<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, PyAny>> {
+            py.eval(c"str.format", None, None)?.call1((
+                "MixerDef({!r}, {!r})",
+                self.inner.to_string(),
+                self.operations(),
+            ))
+        }
+
         #[getter]
         fn operations(&self) -> Vec<PyMixerOp> {
             self.inner.operations()
@@ -474,8 +489,8 @@ pub mod py_mixer {
     }
 
     impl PyMixerDef {
-        pub fn new(inner: impl MixerDef + 'static) -> Self {
-            Self { inner: Box::new(inner), compiled: None }
+        pub fn new(inner: Box<dyn MixerDef>) -> Self {
+            Self { inner, compiled: None }
         }
 
         pub fn compile(&mut self) -> Mixer {
