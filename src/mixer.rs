@@ -27,9 +27,9 @@ use cranelift_codegen::ir::types::I64;
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{FuncId, Linkage, Module};
 use pyo3::prelude::pymodule;
-use std::fmt::{Display, Error, Formatter};
+use std::fmt::Display;
 
-use crate::ops::{MixerOp, OpListBuilder};
+use crate::ops::{Operation, OpListBuilder};
 
 #[derive(Clone, Copy)]
 pub struct Mixer {
@@ -45,7 +45,7 @@ impl Mixer {
 pub trait MixerDef: Display + Send + Sync {
     fn build(&self, x: &mut OpListBuilder);
 
-    fn operations(&self) -> Vec<Box<dyn MixerOp>> {
+    fn operations(&self) -> Vec<Box<dyn Operation>> {
         let mut builder = OpListBuilder::default();
         self.build(&mut builder);
         builder.op_list
@@ -97,28 +97,11 @@ pub trait MixerDef: Display + Send + Sync {
 
 #[pymodule(name = "mixer", module = "xsmtest")]
 pub mod py_mixer {
-    use pyo3::IntoPyObject;
     use pyo3::prelude::{Bound, PyAny, pyclass, pymethods, PyResult, Python};
     use pyo3::types::PyAnyMethods;
 
-    use crate::mixer::{Mixer, MixerDef};
-    use crate::ops::MixerOp;
-
-    #[pyclass(name = "MixerOp")]
-    struct PyMixerOp {
-        inner: Box<dyn MixerOp>,
-    }
-
-    #[pymethods]
-    impl PyMixerOp {
-        fn __call__(&self, x: u64) -> u64 {
-            self.inner.eval(x)
-        }
-
-        fn __repr__(&self) -> String {
-            self.inner.to_string()
-        }
-    }
+    use crate::ops::py_ops::PyOperation;
+    use super::{Mixer, MixerDef};
 
     #[pyclass(name = "MixerDef")]
     pub struct PyMixerDef {
@@ -145,10 +128,10 @@ pub mod py_mixer {
         }
 
         #[getter]
-        fn operations(&self) -> Vec<PyMixerOp> {
+        fn operations(&self) -> Vec<PyOperation> {
             self.inner.operations()
                 .into_iter()
-                .map(|op| PyMixerOp { inner: op })
+                .map(|op| PyOperation { inner: op })
                 .collect()
         }
     }

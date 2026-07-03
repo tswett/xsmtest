@@ -19,12 +19,15 @@
 // SOFTWARE.
 
 use cranelift::prelude::{FunctionBuilder, InstBuilder, Value};
-use std::fmt::{Display, Error, Formatter};
+use std::fmt;
+use std::fmt::{Display, Formatter};
 
-pub trait MixerOp: Display + Send + Sync {
+use pyo3::prelude::{PyErr, pymodule};
+
+pub trait Operation: Display + Send + Sync {
     fn eval(&self, x: u64) -> u64;
-
-    fn compile(&self, func_builder: &mut FunctionBuilder, input: Value) -> Value;
+    fn compile(&self, func_builder: &mut FunctionBuilder, input: Value)
+        -> Value;
 }
 
 #[derive(Debug)]
@@ -36,7 +39,7 @@ pub enum ParameterError {
 }
 
 impl Display for ParameterError {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
         match self {
             ParameterError::MultiplierError { multiplier } => write!(f,
                 "invalid multiplier: expected odd number but {:016x} is even",
@@ -56,6 +59,10 @@ impl Display for ParameterError {
     }
 }
 
+impl From<ParameterError> for PyErr {
+    fn from(e: ParameterError) -> PyErr { todo!() }
+}
+
 pub struct MultiplyOp {
     multiplier: u64,
 }
@@ -71,12 +78,12 @@ impl MultiplyOp {
 }
 
 impl Display for MultiplyOp {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
         write!(f, "multiply(0x{:016x})", self.multiplier)
     }
 }
 
-impl MixerOp for MultiplyOp {
+impl Operation for MultiplyOp {
     fn eval(&self, x: u64) -> u64 {
         x.wrapping_mul(self.multiplier)
     }
@@ -109,7 +116,7 @@ impl XorshiftRightOp {
 }
 
 impl Display for XorshiftRightOp {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
         write!(f, "xorshift_right(")?;
         for (i, offset) in self.offsets.iter().enumerate() {
             if i > 0 { write!(f, ", ")?; }
@@ -119,7 +126,7 @@ impl Display for XorshiftRightOp {
     }
 }
 
-impl MixerOp for XorshiftRightOp {
+impl Operation for XorshiftRightOp {
     fn eval(&self, x: u64) -> u64 {
         let mut result = x;
         for offset in &self.offsets {
@@ -161,7 +168,7 @@ impl XorshiftLeftOp {
 }
 
 impl Display for XorshiftLeftOp {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
         write!(f, "xorshift_left(")?;
         for (i, offset) in self.offsets.iter().enumerate() {
             if i > 0 { write!(f, ", ")?; }
@@ -171,7 +178,7 @@ impl Display for XorshiftLeftOp {
     }
 }
 
-impl MixerOp for XorshiftLeftOp {
+impl Operation for XorshiftLeftOp {
     fn eval(&self, x: u64) -> u64 {
         let mut result = x;
         for offset in &self.offsets {
@@ -213,7 +220,7 @@ impl XorrotateRightOp {
 }
 
 impl Display for XorrotateRightOp {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
         write!(f, "xorrotate_right(")?;
         for (i, offset) in self.offsets.iter().enumerate() {
             if i > 0 { write!(f, ", ")?; }
@@ -223,7 +230,7 @@ impl Display for XorrotateRightOp {
     }
 }
 
-impl MixerOp for XorrotateRightOp {
+impl Operation for XorrotateRightOp {
     fn eval(&self, x: u64) -> u64 {
         let mut result = x;
         for offset in &self.offsets {
@@ -255,12 +262,12 @@ impl XorOp {
 }
 
 impl Display for XorOp {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
         write!(f, "xor(0x{:016x})", self.pad)
     }
 }
 
-impl MixerOp for XorOp {
+impl Operation for XorOp {
     fn eval(&self, x: u64) -> u64 {
         x ^ self.pad
     }
@@ -288,12 +295,12 @@ impl GatedXorOp {
 }
 
 impl Display for GatedXorOp {
-    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
         write!(f, "gated_xor(0x{:016x}, 0x{:016x})", self.gate, self.pad)
     }
 }
 
-impl MixerOp for GatedXorOp {
+impl Operation for GatedXorOp {
     fn eval(&self, x: u64) -> u64 {
         if (x & self.gate).count_ones() % 2 == 1 { x ^ self.pad } else { x }
     }
@@ -313,7 +320,7 @@ impl MixerOp for GatedXorOp {
 
 #[derive(Default)]
 pub struct OpListBuilder {
-    pub op_list: Vec<Box<dyn MixerOp>>,
+    pub op_list: Vec<Box<dyn Operation>>,
 }
 
 impl OpListBuilder {
@@ -356,5 +363,29 @@ impl OpListBuilder {
     pub fn gated_xor(&mut self, gate: u64, pad: u64) {
         self.op_list.push(Box::new(
             GatedXorOp::new(gate, pad).unwrap()));
+    }
+}
+
+#[pymodule(name = "ops", module = "xsmtest")]
+pub mod py_ops {
+    use pyo3::prelude::{Bound, pyclass, pymethods, PyResult};
+    use pyo3::types::{PyAnyMethods, PyTuple, PyTupleMethods};
+
+    use super::{Operation, ParameterError};
+
+    #[pyclass(name = "Operation")]
+    pub struct PyOperation {
+        pub inner: Box<dyn Operation>,
+    }
+
+    #[pymethods]
+    impl PyOperation {
+        fn __call__(&self, x: u64) -> u64 {
+            self.inner.eval(x)
+        }
+
+        fn __repr__(&self) -> String {
+            self.inner.to_string()
+        }
     }
 }

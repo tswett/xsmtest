@@ -30,4 +30,7 @@ mod xsmtest {
 
     #[pymodule_export]
     use crate::mixers::py_mixers;
+
+    #[pymodule_export]
+    use crate::ops::py_ops;
 }
