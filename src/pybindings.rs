@@ -22,6 +22,10 @@ use pyo3::prelude::pymodule;
 
 #[pymodule]
 mod xsmtest {
+    use pyo3::ffi::c_str;
+    use pyo3::prelude::{Bound, PyModule, PyResult};
+    use pyo3::types::IntoPyDict;
+
     #[pymodule_export]
     use crate::mixer::py_mixer;
 
@@ -33,4 +37,23 @@ mod xsmtest {
 
     #[pymodule_export]
     use crate::ops::py_ops;
+
+    #[pymodule_init]
+    fn init(m: &Bound<'_, PyModule>) -> PyResult<()> {
+        // Register the modules, so that e.g. `from xsmtest.ops import xor`
+        // will work correctly
+        let py = m.py();
+        let locals = [("mod", m)].into_py_dict(py)?;
+        py.run(
+            c_str!("\
+                import sys \n\
+                from types import ModuleType \n\
+                for item in vars(mod).values():
+                    if isinstance(item, ModuleType):
+                        sys.modules[item.__name__] = item
+            "),
+            None,
+            Some(&locals),
+        )
+    }
 }

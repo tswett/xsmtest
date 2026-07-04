@@ -370,10 +370,12 @@ impl OpListBuilder {
 
 #[pymodule(name = "ops", module = "xsmtest")]
 pub mod py_ops {
-    use pyo3::prelude::{Bound, pyclass, pyfunction, pymethods, PyResult};
-    use pyo3::types::{PyAnyMethods, PyTuple, PyTupleMethods};
+    use pyo3::prelude::{pyclass, pyfunction, pymethods, PyResult};
 
-    use super::{MultiplyOp, Operation, ParameterError};
+    use super::{
+        GatedXorOp, MultiplyOp, Operation, XorOp,
+        XorrotateRightOp, XorshiftLeftOp, XorshiftRightOp,
+    };
 
     #[pyclass(name = "Operation")]
     pub struct PyOperation(pub Box<dyn Operation>);
@@ -392,5 +394,33 @@ pub mod py_ops {
     #[pyfunction]
     fn multiply(multiplier: u64) -> PyResult<PyOperation> {
         Ok(PyOperation(Box::new(MultiplyOp::new(multiplier)?)))
+    }
+
+    #[pyfunction]
+    #[pyo3(signature = (*offsets))]
+    fn xorshift_right(offsets: Vec<i32>) -> PyResult<PyOperation> {
+        Ok(PyOperation(Box::new(XorshiftRightOp::new(offsets)?)))
+    }
+
+    #[pyfunction]
+    #[pyo3(signature = (*offsets))]
+    fn xorshift_left(offsets: Vec<i32>) -> PyResult<PyOperation> {
+        Ok(PyOperation(Box::new(XorshiftLeftOp::new(offsets)?)))
+    }
+
+    #[pyfunction]
+    #[pyo3(signature = (*offsets))]
+    fn xorrotate_right(offsets: Vec<i32>) -> PyResult<PyOperation> {
+        Ok(PyOperation(Box::new(XorrotateRightOp::new(offsets)?)))
+    }
+
+    #[pyfunction]
+    fn xor(pad: u64) -> PyResult<PyOperation> {
+        Ok(PyOperation(Box::new(XorOp::new(pad))))
+    }
+
+    #[pyfunction]
+    fn gated_xor(gate: u64, pad: u64) -> PyResult<PyOperation> {
+        Ok(PyOperation(Box::new(GatedXorOp::new(gate, pad)?)))
     }
 }
