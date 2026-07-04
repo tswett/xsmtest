@@ -131,7 +131,7 @@ pub mod py_mixer {
         fn operations(&self) -> Vec<PyOperation> {
             self.inner.operations()
                 .into_iter()
-                .map(|op| PyOperation { inner: op })
+                .map(|op| PyOperation(op))
                 .collect()
         }
     }

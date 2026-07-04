@@ -19,10 +19,10 @@
 // SOFTWARE.
 
 use cranelift::prelude::{FunctionBuilder, InstBuilder, Value};
+use pyo3::exceptions::PyValueError;
+use pyo3::prelude::{PyErr, pymodule};
 use std::fmt;
 use std::fmt::{Display, Formatter};
-
-use pyo3::prelude::{PyErr, pymodule};
 
 pub trait Operation: Display + Send + Sync {
     fn eval(&self, x: u64) -> u64;
@@ -42,7 +42,7 @@ impl Display for ParameterError {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
         match self {
             ParameterError::MultiplierError { multiplier } => write!(f,
-                "invalid multiplier: expected odd number but {:016x} is even",
+                "invalid multiplier: expected odd number but 0x{:016x} is even",
                 multiplier),
             ParameterError::OffsetError { offset } => write!(f,
                 "invalid offset: expected number in range 1 to 64 but {} is outside that range",
@@ -51,7 +51,7 @@ impl Display for ParameterError {
                 "invalid number of offsets: expected an even number of offsets but there are {} here",
                 count),
             ParameterError::GatePadError { gate, pad } => write!(f,
-                "invalid gate and pad: the gate ({:016x}) and the pad ({:016x}) should have an even number of bits in common but they actually have {}",
+                "invalid gate and pad: the gate (0x{:016x}) and the pad (0x{:016x}) should have an even number of bits in common but they actually have {}",
                 gate,
                 pad,
                 (gate & pad).count_ones()),
@@ -60,7 +60,9 @@ impl Display for ParameterError {
 }
 
 impl From<ParameterError> for PyErr {
-    fn from(e: ParameterError) -> PyErr { todo!() }
+    fn from(e: ParameterError) -> PyErr {
+        PyValueError::new_err(e.to_string())
+    }
 }
 
 pub struct MultiplyOp {
@@ -368,24 +370,27 @@ impl OpListBuilder {
 
 #[pymodule(name = "ops", module = "xsmtest")]
 pub mod py_ops {
-    use pyo3::prelude::{Bound, pyclass, pymethods, PyResult};
+    use pyo3::prelude::{Bound, pyclass, pyfunction, pymethods, PyResult};
     use pyo3::types::{PyAnyMethods, PyTuple, PyTupleMethods};
 
-    use super::{Operation, ParameterError};
+    use super::{MultiplyOp, Operation, ParameterError};
 
     #[pyclass(name = "Operation")]
-    pub struct PyOperation {
-        pub inner: Box<dyn Operation>,
-    }
+    pub struct PyOperation(pub Box<dyn Operation>);
 
     #[pymethods]
     impl PyOperation {
         fn __call__(&self, x: u64) -> u64 {
-            self.inner.eval(x)
+            self.0.eval(x)
         }
 
         fn __repr__(&self) -> String {
-            self.inner.to_string()
+            self.0.to_string()
         }
+    }
+
+    #[pyfunction]
+    fn multiply(multiplier: u64) -> PyResult<PyOperation> {
+        Ok(PyOperation(Box::new(MultiplyOp::new(multiplier)?)))
     }
 }
