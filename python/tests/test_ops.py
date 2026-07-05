@@ -1,4 +1,5 @@
 import pytest
+from xsmtest.mixer import MixerDef
 from xsmtest import ops
 
 def test_multiply():
@@ -36,3 +37,10 @@ def test_xor():
 def test_gated_xor():
     assert ops.gated_xor(0xf0, 1)(0x100) == 0x100
     assert ops.gated_xor(0xf00, 1)(0x100) == 0x101
+
+def test_offset_64_gives_identity():
+    assert ops.xorshift_right(64)(5) == 5
+    assert ops.xorshift_left(64)(5) == 5
+
+    assert MixerDef('right64', [ops.xorshift_right(64)])(5) == 5
+    assert MixerDef('left64', [ops.xorshift_left(64)])(5) == 5

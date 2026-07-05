@@ -142,8 +142,11 @@ impl Operation for XorshiftRightOp {
 
     fn eval(&self, x: u64) -> u64 {
         let mut result = x;
-        for offset in &self.offsets {
-            result ^= x >> offset;
+        for &offset in &self.offsets {
+            // xorshift by 64 is a no-op
+            if offset != 64 {
+                result ^= x >> offset;
+            }
         }
         result
     }
@@ -152,9 +155,12 @@ impl Operation for XorshiftRightOp {
         -> Value
     {
         let mut result = input;
-        for offset in &self.offsets {
-            let shifted = func_builder.ins().ushr_imm(input, *offset as i64);
-            result = func_builder.ins().bxor(result, shifted);
+        for &offset in &self.offsets {
+            // xorshift by 64 is a no-op
+            if offset != 64 {
+                let shifted = func_builder.ins().ushr_imm(input, offset as i64);
+                result = func_builder.ins().bxor(result, shifted);
+            }
         }
         result
     }
@@ -199,8 +205,11 @@ impl Operation for XorshiftLeftOp {
 
     fn eval(&self, x: u64) -> u64 {
         let mut result = x;
-        for offset in &self.offsets {
-            result ^= x << offset;
+        for &offset in &self.offsets {
+            // xorshift by 64 is a no-op
+            if offset != 64 {
+                result ^= x << offset;
+            }
         }
         result
     }
@@ -209,9 +218,12 @@ impl Operation for XorshiftLeftOp {
         -> Value
     {
         let mut result = input;
-        for offset in &self.offsets {
-            let shifted = func_builder.ins().ishl_imm(input, *offset as i64);
-            result = func_builder.ins().bxor(result, shifted);
+        for &offset in &self.offsets {
+            // xorshift by 64 is a no-op
+            if offset != 64 {
+                let shifted = func_builder.ins().ishl_imm(input, offset as i64);
+                result = func_builder.ins().bxor(result, shifted);
+            }
         }
         result
     }
