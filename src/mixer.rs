@@ -26,6 +26,7 @@ use cranelift_codegen::Context;
 use cranelift_codegen::ir::types::I64;
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{FuncId, Linkage, Module};
+use documented::Documented;
 use pyo3::prelude::pymodule;
 use std::fmt;
 use std::fmt::{Display, Formatter};
@@ -43,7 +44,17 @@ impl Mixer {
     }
 }
 
-pub trait MixerDef: Display + Send + Sync {
+pub trait HasDocstring {
+    fn docstring(&self) -> String;
+}
+
+impl<T: Documented> HasDocstring for T {
+    fn docstring(&self) -> String {
+        Self::DOCS.to_string()
+    }
+}
+
+pub trait MixerDef: Display + HasDocstring + Send + Sync {
     fn build(&self, x: &mut OpListBuilder);
 
     fn operations(&self) -> Vec<Box<dyn Operation>> {
@@ -101,6 +112,12 @@ struct CustomMixer {
     operations: Vec<Box<dyn Operation>>,
 }
 
+impl HasDocstring for CustomMixer {
+    fn docstring(&self) -> String {
+        "".to_string()
+    }
+}
+
 impl Display for CustomMixer {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
         write!(f, "{}", self.name)
@@ -117,13 +134,32 @@ impl MixerDef for CustomMixer {
 
 #[pymodule(name = "mixer", module = "xsmtest")]
 pub mod py_mixer {
-    use pyo3::prelude::{Bound, PyAny, pyclass, pymethods, PyRef, PyResult, Python};
+    use pyo3::prelude::{
+        Bound, Py, PyAny, pyclass, pymethods, PyModule, PyRef, PyResult, Python
+    };
     use pyo3::types::PyAnyMethods;
 
     use crate::ops::Operation;
     use crate::ops::py_ops::PyOperation;
     use super::{CustomMixer, Mixer, MixerDef};
 
+    #[pyclass(name = "_DocDescriptor")]
+    struct DocDescriptor;
+
+    #[pymethods]
+    impl DocDescriptor {
+        fn __get__<'a>(&self, obj: &Bound<'a, PyAny>, type_: &Bound<'a, PyAny>)
+            -> PyResult<Bound<'a, PyAny>>
+        {
+            if obj.is_none() {
+                type_.getattr("_docstring")
+            } else {
+                obj.getattr("description")
+            }
+        }
+    }
+
+    /// A mixer, composed of several mixer operations
     #[pyclass(name = "MixerDef")]
     pub struct PyMixerDef {
         inner: Box<dyn MixerDef>,
@@ -144,6 +180,11 @@ pub mod py_mixer {
             }
 
             Ok(PyMixerDef::new(Box::new(CustomMixer { name, operations })))
+        }
+
+        #[getter]
+        fn description(&self) -> String {
+            self.inner.docstring()
         }
 
         fn __call__(&mut self, x: u64) -> u64 {
@@ -184,6 +225,17 @@ pub mod py_mixer {
         pub fn compile(&mut self) -> Mixer {
             *self.compiled.get_or_insert_with(|| self.inner.compile())
         }
+    }
+
+    #[pymodule_init]
+    fn init(m: &Bound<'_, PyModule>) -> PyResult<()> {
+        let py = m.py();
+
+        let orig_docstring = m.getattr("MixerDef")?.getattr("__doc__")?;
+        m.getattr("MixerDef")?.setattr("_docstring", orig_docstring)?;
+
+        let descriptor = Py::new(py, DocDescriptor { })?;
+        m.getattr("MixerDef")?.setattr("__doc__", descriptor)
     }
 }
 

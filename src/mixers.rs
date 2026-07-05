@@ -18,6 +18,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
+use documented::Documented;
 use pyo3::prelude::pymodule;
 use std::fmt::{Display, Formatter, Result};
 
@@ -36,8 +37,9 @@ fn mulinv(x: u64) -> u64 {
     inv
 }
 
-// A totally trivial mixing function that literally does nothing.
-pub struct Trivial;
+/// A totally trivial mixing function that literally does nothing.
+#[derive(Documented)]
+struct Trivial;
 
 impl Display for Trivial {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
@@ -49,8 +51,9 @@ impl MixerDef for Trivial {
     fn build(&self, _x: &mut OpListBuilder) { }
 }
 
-// An atrocious mixing function which gets the mean Hamming distance right, but
-// doesn't actually mix anything.
+/// An atrocious mixing function which gets the mean Hamming distance right, but
+/// doesn't actually mix anything.
+#[derive(Documented)]
 struct FakeAva;
 
 impl Display for FakeAva {
@@ -65,19 +68,20 @@ impl MixerDef for FakeAva {
     }
 }
 
-// Still an atrocious mixing function which gets both the mean and the standard
-// deviation of the Hamming distance right, but doesn't actually mix anything.
-// This one uses a carefully engineered relationship between the input bit that
-// was flipped in the avalanche test and the number of output bits that flip as
-// a result. Specifically:
-//
-// * at 12 input positions, a flip causes 37 output positions to flip,
-// * at 20 input positions, a flip causes 33 output positions to flip,
-// * at 20 input positions, a flip causes 31 output positions to flip, and
-// * at 12 input positions, a flip causes 27 output positions to flip.
-//
-// This causes this "mixer" to get the mean and standard deviation correct on
-// the nose (which is _better_ than a real mixer would perform).
+/// Still an atrocious mixing function which gets both the mean and the standard
+/// deviation of the Hamming distance right, but doesn't actually mix anything.
+/// This one uses a carefully engineered relationship between the input bit that
+/// was flipped in the avalanche test and the number of output bits that flip as
+/// a result. Specifically:
+///
+/// * at 12 input positions, a flip causes 37 output positions to flip,
+/// * at 20 input positions, a flip causes 33 output positions to flip,
+/// * at 20 input positions, a flip causes 31 output positions to flip, and
+/// * at 12 input positions, a flip causes 27 output positions to flip.
+///
+/// This causes this "mixer" to get the mean and standard deviation correct on
+/// the nose (which is _better_ than a real mixer would perform).
+#[derive(Documented)]
 struct DeluxeFakeAva;
 
 impl Display for DeluxeFakeAva {
@@ -97,7 +101,8 @@ impl MixerDef for DeluxeFakeAva {
 // pi * 2^60, rounded to the nearest odd integer
 const PI64: u64 = 0x3243f6a8885a308d;
 
-// This gives us some avalanching, but not much.
+/// This gives us some avalanching, but not much.
+#[derive(Documented)]
 struct TerriblePi;
 
 impl Display for TerriblePi {
@@ -112,7 +117,8 @@ impl MixerDef for TerriblePi {
     }
 }
 
-// A little bit more avalanching, but not enough.
+/// A little bit more avalanching, but not enough.
+#[derive(Documented)]
 struct LousyPi;
 
 impl Display for LousyPi {
@@ -130,7 +136,8 @@ impl MixerDef for LousyPi {
     }
 }
 
-// A shift-only mixer created entirely via mutation testing.
+/// A shift-only mixer created entirely via mutation testing.
+#[derive(Documented)]
 struct MutaShuffle;
 
 impl Display for MutaShuffle {
@@ -158,7 +165,8 @@ impl MixerDef for MutaShuffle {
     }
 }
 
-// A terrible mixer that should be easy to automatically analyze.
+/// A terrible mixer that should be easy to automatically analyze.
+#[derive(Documented)]
 struct EasyNut;
 
 impl Display for EasyNut {
@@ -176,6 +184,8 @@ impl MixerDef for EasyNut {
     }
 }
 
+/// A MurmurHash3-like mixer that uses the PI64 constant.
+#[derive(Documented)]
 struct DecentPi;
 
 impl Display for DecentPi {
@@ -196,9 +206,10 @@ impl MixerDef for DecentPi {
     }
 }
 
-// The venerable finalizer from MurmurHash3 (fmix64), taken from
-// https://github.com/aappleby/smhasher/blob/master/src/MurmurHash3.cpp
-pub struct MurmurHash3;
+/// The venerable finalizer from MurmurHash3 (fmix64), taken from
+/// https://github.com/aappleby/smhasher/blob/master/src/MurmurHash3.cpp
+#[derive(Documented)]
+struct MurmurHash3;
 
 impl Display for MurmurHash3 {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
@@ -221,6 +232,8 @@ impl MixerDef for MurmurHash3 {
     }
 }
 
+/// The MurmurHash3 finalizer, but with an arbitrary number of rounds.
+#[derive(Documented)]
 struct ExtendedMurmurHash3 {
     rounds: u32,
 }
@@ -245,16 +258,18 @@ impl MixerDef for ExtendedMurmurHash3 {
     }
 }
 
-// David Stafford's Mix13 variant of the finalizer from MurmurHash3, taken from
-// http://zimbry.blogspot.com/2011/09/better-bit-mixing-improving-on.html
-// This mixer is used in the SplitMix64 PRNG, and, indeed, it's often called
-// "the SplitMix64 finalizer." This name is doubly incorrect: SplitMix64
-// postdates Mix13 by a couple of years, and although Mix13 is used in
-// SplitMix64, it's not used as the finalizer; SplitMix64 actually uses the same
-// finalizer as MurmurHash3.
-//
-// This design is occasionally misattributed to Sebastiano Vigna, who did not
-// design it and has never claimed to have designed it.
+/// David Stafford's Mix13 variant of the finalizer from MurmurHash3, taken from
+/// http://zimbry.blogspot.com/2011/09/better-bit-mixing-improving-on.html
+///
+/// This mixer is used in the SplitMix64 PRNG, and, indeed, it's often called
+/// "the SplitMix64 finalizer." This name is doubly incorrect: SplitMix64
+/// postdates Mix13 by a couple of years, and although Mix13 is used in
+/// SplitMix64, it's not used as the finalizer; SplitMix64 actually uses the same
+/// finalizer as MurmurHash3.
+///
+/// This design is occasionally misattributed to Sebastiano Vigna, who did not
+/// design it and has never claimed to have designed it.
+#[derive(Documented)]
 struct Mix13;
 
 impl Display for Mix13 {
@@ -278,8 +293,9 @@ impl MixerDef for Mix13 {
     }
 }
 
-// Pelle Evensen's Moremur, from
-// https://mostlymangling.blogspot.com/2019/12/stronger-better-morer-moremur-better.html
+/// Pelle Evensen's Moremur, from
+/// https://mostlymangling.blogspot.com/2019/12/stronger-better-morer-moremur-better.html
+#[derive(Documented)]
 struct Moremur;
 
 impl Display for Moremur {
@@ -303,6 +319,8 @@ impl MixerDef for Moremur {
     }
 }
 
+/// A mixer that does lots of xorrotate.
+#[derive(Documented)]
 struct RotatoryPi;
 
 impl Display for RotatoryPi {
@@ -323,6 +341,8 @@ impl MixerDef for RotatoryPi {
     }
 }
 
+/// A mixer that does xor(PI64) before and after the other steps.
+#[derive(Documented)]
 struct PadRotPi;
 
 impl Display for PadRotPi {
@@ -347,9 +367,10 @@ impl MixerDef for PadRotPi {
     }
 }
 
-// Pelle Evensen's NASAM, from
-// https://mostlymangling.blogspot.com/2020/01/nasam-not-another-strange-acronym-mixer.html
-pub struct NASAM;
+/// Pelle Evensen's NASAM, from
+/// https://mostlymangling.blogspot.com/2020/01/nasam-not-another-strange-acronym-mixer.html
+#[derive(Documented)]
+struct NASAM;
 
 impl Display for NASAM {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
@@ -392,6 +413,8 @@ pub fn double_nasam(mut x: u64) -> u64 {
     x
 }
 
+/// A mixer modified to do xor(PI64) first
+#[derive(Documented)]
 struct PreXorPi {
     inner: Box<dyn MixerDef>,
 }
