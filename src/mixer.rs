@@ -27,7 +27,8 @@ use cranelift_codegen::ir::types::I64;
 use cranelift_jit::{JITBuilder, JITModule};
 use cranelift_module::{FuncId, Linkage, Module};
 use pyo3::prelude::pymodule;
-use std::fmt::Display;
+use std::fmt;
+use std::fmt::{Display, Formatter};
 
 use crate::ops::{Operation, OpListBuilder};
 
@@ -95,13 +96,33 @@ pub trait MixerDef: Display + Send + Sync {
     }
 }
 
+struct CustomMixer {
+    name: String,
+    operations: Vec<Box<dyn Operation>>,
+}
+
+impl Display for CustomMixer {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), fmt::Error> {
+        write!(f, "{}", self.name)
+    }
+}
+
+impl MixerDef for CustomMixer {
+    fn build(&self, x: &mut OpListBuilder) {
+        for op in &self.operations {
+            x.push(op)
+        }
+    }
+}
+
 #[pymodule(name = "mixer", module = "xsmtest")]
 pub mod py_mixer {
-    use pyo3::prelude::{Bound, PyAny, pyclass, pymethods, PyResult, Python};
+    use pyo3::prelude::{Bound, PyAny, pyclass, pymethods, PyRef, PyResult, Python};
     use pyo3::types::PyAnyMethods;
 
+    use crate::ops::Operation;
     use crate::ops::py_ops::PyOperation;
-    use super::{Mixer, MixerDef};
+    use super::{CustomMixer, Mixer, MixerDef};
 
     #[pyclass(name = "MixerDef")]
     pub struct PyMixerDef {
@@ -111,20 +132,39 @@ pub mod py_mixer {
 
     #[pymethods]
     impl PyMixerDef {
+        #[new]
+        fn __new__(name: String, py_operations: &Bound<'_, PyAny>)
+            -> PyResult<PyMixerDef>
+        {
+            let mut operations: Vec<Box<dyn Operation>> = Vec::new();
+
+            for item in py_operations.try_iter()? {
+                let py_op: PyRef<PyOperation> = item?.extract()?;
+                operations.push(py_op.0.box_clone())
+            }
+
+            Ok(PyMixerDef::new(Box::new(CustomMixer { name, operations })))
+        }
+
         fn __call__(&mut self, x: u64) -> u64 {
             self.compile().mix(x)
         }
 
         fn __str__(&self) -> String {
-            self.inner.to_string()
+            self.name()
         }
 
         fn __repr__<'a>(&self, py: Python<'a>) -> PyResult<Bound<'a, PyAny>> {
             py.eval(c"str.format", None, None)?.call1((
                 "MixerDef({!r}, {!r})",
-                self.inner.to_string(),
+                self.name(),
                 self.operations(),
             ))
+        }
+
+        #[getter]
+        pub fn name(&self) -> String {
+            self.inner.to_string()
         }
 
         #[getter]
@@ -143,10 +183,6 @@ pub mod py_mixer {
 
         pub fn compile(&mut self) -> Mixer {
             *self.compiled.get_or_insert_with(|| self.inner.compile())
-        }
-
-        pub fn name(&self) -> String {
-            self.inner.to_string()
         }
     }
 }

@@ -25,6 +25,7 @@ use std::fmt;
 use std::fmt::{Display, Formatter};
 
 pub trait Operation: Display + Send + Sync {
+    fn box_clone(&self) -> Box<dyn Operation>;
     fn eval(&self, x: u64) -> u64;
     fn compile(&self, func_builder: &mut FunctionBuilder, input: Value)
         -> Value;
@@ -65,6 +66,7 @@ impl From<ParameterError> for PyErr {
     }
 }
 
+#[derive(Clone, Copy)]
 pub struct MultiplyOp {
     multiplier: u64,
 }
@@ -86,6 +88,10 @@ impl Display for MultiplyOp {
 }
 
 impl Operation for MultiplyOp {
+    fn box_clone(&self) -> Box<dyn Operation> {
+        Box::new(*self)
+    }
+
     fn eval(&self, x: u64) -> u64 {
         x.wrapping_mul(self.multiplier)
     }
@@ -97,6 +103,7 @@ impl Operation for MultiplyOp {
     }
 }
 
+#[derive(Clone)]
 pub struct XorshiftRightOp {
     offsets: Vec<i32>,
 }
@@ -129,6 +136,10 @@ impl Display for XorshiftRightOp {
 }
 
 impl Operation for XorshiftRightOp {
+    fn box_clone(&self) -> Box<dyn Operation> {
+        Box::new(self.clone())
+    }
+
     fn eval(&self, x: u64) -> u64 {
         let mut result = x;
         for offset in &self.offsets {
@@ -149,6 +160,7 @@ impl Operation for XorshiftRightOp {
     }
 }
 
+#[derive(Clone)]
 pub struct XorshiftLeftOp {
     offsets: Vec<i32>,
 }
@@ -181,6 +193,10 @@ impl Display for XorshiftLeftOp {
 }
 
 impl Operation for XorshiftLeftOp {
+    fn box_clone(&self) -> Box<dyn Operation> {
+        Box::new(self.clone())
+    }
+
     fn eval(&self, x: u64) -> u64 {
         let mut result = x;
         for offset in &self.offsets {
@@ -201,6 +217,7 @@ impl Operation for XorshiftLeftOp {
     }
 }
 
+#[derive(Clone)]
 pub struct XorrotateRightOp {
     offsets: Vec<i32>,
 }
@@ -233,6 +250,10 @@ impl Display for XorrotateRightOp {
 }
 
 impl Operation for XorrotateRightOp {
+    fn box_clone(&self) -> Box<dyn Operation> {
+        Box::new(self.clone())
+    }
+
     fn eval(&self, x: u64) -> u64 {
         let mut result = x;
         for offset in &self.offsets {
@@ -253,6 +274,7 @@ impl Operation for XorrotateRightOp {
     }
 }
 
+#[derive(Clone, Copy)]
 pub struct XorOp {
     pad: u64,
 }
@@ -270,6 +292,10 @@ impl Display for XorOp {
 }
 
 impl Operation for XorOp {
+    fn box_clone(&self) -> Box<dyn Operation> {
+        Box::new(*self)
+    }
+
     fn eval(&self, x: u64) -> u64 {
         x ^ self.pad
     }
@@ -281,6 +307,7 @@ impl Operation for XorOp {
     }
 }
 
+#[derive(Clone, Copy)]
 pub struct GatedXorOp {
     gate: u64,
     pad: u64,
@@ -303,6 +330,10 @@ impl Display for GatedXorOp {
 }
 
 impl Operation for GatedXorOp {
+    fn box_clone(&self) -> Box<dyn Operation> {
+        Box::new(*self)
+    }
+
     fn eval(&self, x: u64) -> u64 {
         if (x & self.gate).count_ones() % 2 == 1 { x ^ self.pad } else { x }
     }
@@ -326,6 +357,10 @@ pub struct OpListBuilder {
 }
 
 impl OpListBuilder {
+    pub fn push(&mut self, op: &Box<dyn Operation>) {
+        self.op_list.push(op.box_clone());
+    }
+
     pub fn xorshift_right(&mut self, offset: i32) {
         self.op_list.push(Box::new(
             XorshiftRightOp::new_single(offset).unwrap()));
