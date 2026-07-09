@@ -367,6 +367,31 @@ impl MixerDef for PadRotPi {
     }
 }
 
+/// Jon Maiga's mx3 (revision 2), from
+/// https://web.archive.org/web/20260212140120/https://jonkagstrom.com/mx3/mx3_rev2.html
+#[derive(Documented)]
+struct Mx3;
+
+impl Display for Mx3 {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        write!(f, "mx3")
+    }
+}
+
+impl MixerDef for Mx3 {
+    fn build(&self, x: &mut OpListBuilder) {
+        const M: u64 = 0xbea225f9eb34556d;
+
+        x.xorshift_right(32);
+        x.multiply(M);
+	x.xorshift_right(29);
+        x.multiply(M);
+	x.xorshift_right(32);
+        x.multiply(M);
+	x.xorshift_right(29);
+    }
+}
+
 /// Pelle Evensen's NASAM, from
 /// https://mostlymangling.blogspot.com/2020/01/nasam-not-another-strange-acronym-mixer.html
 #[derive(Documented)]
@@ -387,6 +412,36 @@ impl MixerDef for NASAM {
 
         x.multiply(M1);
         x.xorshift_right_m(vec!(23, 51));
+
+        x.multiply(M2);
+        x.xorshift_right_m(vec!(23, 51));
+    }
+}
+
+/// A variant of NASAM that uses a tweak that Evensen suggested in response to
+/// the shift weakness I happened upon. See comment at
+/// https://mostlymangling.blogspot.com/2020/01/nasam-not-another-strange-acronym-mixer.html#c5191317371982714184
+#[derive(Documented)]
+struct NasamNot;
+
+impl Display for NasamNot {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        write!(f, "nasam_not")
+    }
+}
+
+impl MixerDef for NasamNot {
+    fn build(&self, x: &mut OpListBuilder) {
+        const M1: u64 = 0x9e6c63d0676a9a99;
+        const M2: u64 = 0x9e6d62d06f6a9a9b;
+
+        x.xorrotate_right_m(vec!(25, 47));
+
+        x.multiply(M1);
+
+        // The next two lines implement x ^= (~x >> 23) ^ (x >> 51)
+        x.xorshift_right_m(vec!(23, 51));
+        x.xor((1 << 64 - 23) - 1);
 
         x.multiply(M2);
         x.xorshift_right_m(vec!(23, 51));
@@ -450,7 +505,9 @@ pub fn get_mixers() -> Vec<Box<dyn MixerDef>> {
         Box::new(Moremur),
         Box::new(RotatoryPi),
         Box::new(PadRotPi),
+        Box::new(Mx3),
         Box::new(NASAM),
+        Box::new(NasamNot),
         Box::new(PreXorPi { inner: Box::new(NASAM) }),
     )
 }
