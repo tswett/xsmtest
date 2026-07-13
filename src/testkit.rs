@@ -519,8 +519,8 @@ pub enum TestType {
     Z3,
 }
 
-#[pymodule(name = "mixertests", module = "xsmtest")]
-pub mod py_mixertests {
+#[pymodule(name = "testkit", module = "xsmtest")]
+pub mod py_testkit {
     use pyo3::prelude::pyfunction;
 
     use crate::mixer::PyMixerDef;

@@ -18,42 +18,46 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-use pyo3::prelude::pymodule;
+use pyo3::ffi::c_str;
+use pyo3::prelude::{Bound, PyModule, pymodule, PyResult};
+use pyo3::types::IntoPyDict;
+
+pub fn register_submodules(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    // Register the modules, so that e.g. `from xsmtest.ops import xor`
+    // will work correctly
+    let py = m.py();
+    let locals = [("mod", m)].into_py_dict(py)?;
+    py.run(
+        c_str!("\
+            import sys \n\
+            from types import ModuleType \n\
+            for item in vars(mod).values():
+                if isinstance(item, ModuleType):
+                    sys.modules[item.__name__] = item
+        "),
+        None,
+        Some(&locals),
+    )
+}
 
 #[pymodule]
 mod xsmtest {
-    use pyo3::ffi::c_str;
     use pyo3::prelude::{Bound, PyModule, PyResult};
-    use pyo3::types::IntoPyDict;
+
+    use super::register_submodules;
 
     #[pymodule_export]
     use crate::mixer::py_mixer;
 
     #[pymodule_export]
-    use crate::mixertests::py_mixertests;
-
-    #[pymodule_export]
-    use crate::mixers::py_mixers;
+    use crate::testkit::py_testkit;
 
     #[pymodule_export]
     use crate::ops::py_ops;
 
     #[pymodule_init]
     fn init(m: &Bound<'_, PyModule>) -> PyResult<()> {
-        // Register the modules, so that e.g. `from xsmtest.ops import xor`
-        // will work correctly
-        let py = m.py();
-        let locals = [("mod", m)].into_py_dict(py)?;
-        py.run(
-            c_str!("\
-                import sys \n\
-                from types import ModuleType \n\
-                for item in vars(mod).values():
-                    if isinstance(item, ModuleType):
-                        sys.modules[item.__name__] = item
-            "),
-            None,
-            Some(&locals),
-        )
+        register_submodules(m)?;
+        Ok(())
     }
 }

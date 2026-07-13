@@ -20,8 +20,8 @@
 
 use clap::Parser;
 
-use crate::mixers::get_mixers;
-use crate::mixertests::{
+use crate::mixer::catalog::get_mixers;
+use crate::testkit::{
     Avalanche, AvalancheBitwise, DEFAULT_SAMPLES, DEFAULT_SEED, MixerTest,
     MixerTestContext, Powers, Shift, StrictAvalanche, TestType, Z3,
 };

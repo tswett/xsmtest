@@ -512,8 +512,8 @@ pub fn get_mixers() -> Vec<Box<dyn MixerDef>> {
     )
 }
 
-#[pymodule(name = "mixers", module = "xsmtest")]
-pub mod py_mixers {
+#[pymodule(name = "catalog", module = "xsmtest.mixer")]
+pub mod py_catalog {
     use pyo3::prelude::{Bound, PyModule, PyResult};
     use pyo3::types::PyModuleMethods;
 

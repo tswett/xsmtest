@@ -18,7 +18,7 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
-use crate::mixers::double_nasam as mix;
+use crate::mixer::catalog::double_nasam as mix;
 
 pub struct PRNG {
     // Both the state and the pad are always assumed to be clean, in the sense

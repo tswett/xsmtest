@@ -18,6 +18,8 @@
 // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 // SOFTWARE.
 
+pub mod catalog;
+
 use cranelift::prelude::{
     AbiParam, Block, InstBuilder, FunctionBuilder,
     FunctionBuilderContext, Value,
@@ -134,6 +136,9 @@ impl MixerDef for CustomMixer {
 
 #[pymodule(name = "mixer", module = "xsmtest")]
 pub mod py_mixer {
+    #[pymodule_export]
+    use crate::mixer::catalog::py_catalog;
+
     use pyo3::prelude::{
         Bound, Py, PyAny, pyclass, pymethods, PyModule, PyRef, PyResult, Python
     };
@@ -141,6 +146,7 @@ pub mod py_mixer {
 
     use crate::ops::Operation;
     use crate::ops::py_ops::PyOperation;
+    use crate::pybindings::register_submodules;
     use super::{CustomMixer, Mixer, MixerDef};
 
     #[pyclass(name = "_DocDescriptor")]
@@ -235,7 +241,11 @@ pub mod py_mixer {
         m.getattr("MixerDef")?.setattr("_docstring", orig_docstring)?;
 
         let descriptor = Py::new(py, DocDescriptor { })?;
-        m.getattr("MixerDef")?.setattr("__doc__", descriptor)
+        m.getattr("MixerDef")?.setattr("__doc__", descriptor)?;
+
+        register_submodules(m)?;
+
+        Ok(())
     }
 }
 

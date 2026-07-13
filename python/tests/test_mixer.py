@@ -1,5 +1,6 @@
 import pytest
 from xsmtest.mixer import MixerDef
+from xsmtest.mixer.catalog import trivial
 from xsmtest.ops import multiply
 
 def test_MixerDef():
@@ -12,3 +13,6 @@ def test_MixerDef():
 
     assert test_multiply.name == 'test_multiply'
     assert str(test_multiply.operations) == '[multiply(0x0000000000000003)]'
+
+def test_trivial_mixer():
+    assert trivial(1) == 1
